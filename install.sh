@@ -18,6 +18,7 @@ cleanup() {
     local exit_code=$?
     [[ -n "${PULL_LOG_FILE:-}" ]] && rm -f "$PULL_LOG_FILE"
     [[ -n "${ENV_TMP_FILE:-}" ]] && rm -f "$ENV_TMP_FILE"
+    [[ -n "${CLONE_ERR:-}" ]] && rm -f "$CLONE_ERR"
     exit "$exit_code"
 }
 trap cleanup EXIT INT TERM
@@ -188,13 +189,23 @@ fetch_deploy_bundle() {
             log_info "Updating existing clone..."
             (cd "$INSTALL_DIR" && git pull origin "${DEPLOY_BRANCH}" 2>/dev/null) || true
         else
-            log_info "Cloning $DEPLOY_REPO..."
-            if git clone --depth 1 -b "${DEPLOY_BRANCH}" "https://github.com/${DEPLOY_REPO}.git" "$INSTALL_DIR" 2>/dev/null; then
-                log_success "Deploy bundle fetched"
-            else
-                log_error "Failed to clone $DEPLOY_REPO. Set DEPLOY_REPO, DEPLOY_TARBALL_URL, or DEPLOY_CDN_URL."
+            # Clone requires empty directory (or non-existent)
+            if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ] && [ ! -f "$INSTALL_DIR/docker-compose.ghcr.yml" ]; then
+                log_error "$INSTALL_DIR exists and is not empty. Use an empty directory:"
+                log_error "  INSTALL_DIR=/path/to/empty/dir curl -fsSL ... | bash"
                 exit 1
             fi
+            log_info "Cloning $DEPLOY_REPO..."
+            CLONE_ERR=$(mktemp 2>/dev/null) || CLONE_ERR=""
+            if ! git clone --depth 1 -b "${DEPLOY_BRANCH}" "https://github.com/${DEPLOY_REPO}.git" "$INSTALL_DIR" 2>"${CLONE_ERR:-/dev/null}"; then
+                log_error "Failed to clone $DEPLOY_REPO."
+                if [ -n "${CLONE_ERR:-}" ] && [ -s "$CLONE_ERR" ]; then
+                    log_error "$(cat "$CLONE_ERR")"
+                fi
+                log_error "If $INSTALL_DIR exists with other content, use: INSTALL_DIR=/path/to/empty/dir"
+                exit 1
+            fi
+            log_success "Deploy bundle fetched"
         fi
     fi
 
