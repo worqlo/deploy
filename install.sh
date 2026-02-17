@@ -338,78 +338,11 @@ prompt_config() {
     ensure_env "GHCR_REGISTRY" "${GHCR_REGISTRY:-ghcr.io}"
     ensure_env "IMAGE_TAG" "${IMAGE_TAG:-latest}"
 
-    # Access URL - how will users reach Worqlo? (localhost / IP / domain)
-    if [ -n "${BASE_URL:-}" ]; then
-        # Non-interactive: BASE_URL set (e.g. BASE_URL=http://192.168.1.100 curl ... | bash)
-        _apply_base_url "$BASE_URL"
-    elif [ -n "${DOMAIN:-}" ]; then
-        # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com)
-        _apply_base_url "https://${DOMAIN}"
-    elif [ -t 0 ]; then
-        echo ""
-        echo "How will users access Worqlo?"
-        echo "  [1] localhost (single machine, dev)"
-        echo "  [2] IP address (network access, e.g. 192.168.1.100)"
-        echo "  [3] Domain (e.g. worqlo.company.com)"
-        read -p "Choice [1]: " ACCESS_CHOICE </dev/tty
-        ACCESS_CHOICE=${ACCESS_CHOICE:-1}
-
-        case $ACCESS_CHOICE in
-            1)
-                log_info "Using localhost (default)"
-                ;;
-            2)
-                # Auto-detect primary IPv4 as suggestion (exclude loopback)
-                SUGGESTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || \
-                    ip route get 1 2>/dev/null | awk '{print $7; exit}' || \
-                    ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
-                if [ -n "$SUGGESTED_IP" ]; then
-                    read -p "Server IP address [$SUGGESTED_IP]: " IP_INPUT </dev/tty
-                    IP_ADDR="${IP_INPUT:-$SUGGESTED_IP}"
-                else
-                    read -p "Server IP address (e.g. 192.168.1.100): " IP_ADDR </dev/tty
-                fi
-                if [ -z "$IP_ADDR" ]; then
-                    log_error "IP address is required."
-                    exit 1
-                fi
-                HTTP_PORT_VAL="${HTTP_PORT:-80}"
-                if [ "$HTTP_PORT_VAL" = "80" ]; then
-                    _apply_base_url "http://${IP_ADDR}"
-                else
-                    _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
-                fi
-                ;;
-            3)
-                if [ -n "${DOMAIN:-}" ]; then
-                    _apply_base_url "https://${DOMAIN}"
-                else
-                    read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
-                    if [ -z "$DOMAIN_INPUT" ]; then
-                        log_error "Domain is required."
-                        exit 1
-                    fi
-                    _apply_base_url "https://${DOMAIN_INPUT}"
-                fi
-                ;;
-            *)
-                log_error "Invalid choice"
-                exit 1
-                ;;
-        esac
-    fi
-
-    # LLM provider
-    if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ -z "${OLLAMA_BASE_URL:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
-        if ! [ -t 0 ]; then
-            # Non-interactive: default to SGLang, require SGLANG_BASE_URL
-            log_error "No LLM config set. For non-interactive install, set SGLANG_BASE_URL+SGLANG_MODEL (default), OPENAI_API_KEY, or GROK_API_KEY."
-            log_error "Example: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash"
-            exit 1
-        else
+    # LLM provider - ask first when interactive, then collect provider-specific config
+    if [ -t 0 ]; then
         echo ""
         echo "Select LLM provider:"
-        echo "  [1] SGLang (self-hosted, requires BASE_URL + MODEL)"
+        echo "  [1] SGLang (self-hosted, requires URL + model)"
         echo "  [2] OpenAI (requires API key)"
         echo "  [3] Grok/xAI (requires API key)"
         echo "  [4] Ollama (local, no key needed)"
@@ -420,10 +353,11 @@ prompt_config() {
             1)
                 USE_OLLAMA_PROFILE=""
                 sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
-                read -p "SGLang base URL (e.g. http://host:30000): " SGLANG_BASE_URL </dev/tty
-                read -p "SGLang model (e.g. openai/gpt-oss-120b): " SGLANG_MODEL </dev/tty
-                if [ -z "$SGLANG_BASE_URL" ] || [ -z "$SGLANG_MODEL" ]; then
-                    log_error "SGLANG_BASE_URL and SGLANG_MODEL are required"
+                read -p "SGLang base URL (e.g. http://192.168.0.2:30000): " SGLANG_BASE_URL </dev/tty
+                read -p "SGLang model (e.g. openai/gpt-oss-120b) [openai/gpt-oss-120b]: " SGLANG_MODEL_INPUT </dev/tty
+                SGLANG_MODEL="${SGLANG_MODEL_INPUT:-openai/gpt-oss-120b}"
+                if [ -z "$SGLANG_BASE_URL" ]; then
+                    log_error "SGLANG_BASE_URL is required"
                     exit 1
                 fi
                 ensure_env "SGLANG_BASE_URL" "$SGLANG_BASE_URL"
@@ -460,9 +394,13 @@ prompt_config() {
                 ;;
         esac
         rm -f .env.bak
-        fi
     else
-        # Non-interactive: env vars set (SGLang first as default)
+        # Non-interactive: require env vars
+        if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
+            log_error "No LLM config set. For non-interactive install, set SGLANG_BASE_URL+SGLANG_MODEL (default), OPENAI_API_KEY, or GROK_API_KEY."
+            log_error "Example: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash"
+            exit 1
+        fi
         USE_OLLAMA_PROFILE=""
         if [ -n "${SGLANG_BASE_URL:-}" ]; then
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
@@ -479,6 +417,74 @@ prompt_config() {
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env
         fi
         rm -f .env.bak
+    fi
+
+    # Access URL - how will users reach Worqlo? (localhost / IP / domain)
+    if [ -n "${BASE_URL:-}" ]; then
+        # Non-interactive: BASE_URL set (e.g. BASE_URL=http://192.168.1.100 curl ... | bash)
+        _apply_base_url "$BASE_URL"
+    elif [ -n "${DOMAIN:-}" ]; then
+        # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com)
+        _apply_base_url "https://${DOMAIN}"
+    elif [ -t 0 ]; then
+        # Auto-detect IP to suggest; lean towards IP when detected (network access is common)
+        SUGGESTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || \
+            ip route get 1 2>/dev/null | awk '{print $7; exit}' || \
+            ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
+        if [ -n "$SUGGESTED_IP" ]; then
+            DEFAULT_ACCESS=2
+            DEFAULT_PROMPT="[2]"
+        else
+            DEFAULT_ACCESS=1
+            DEFAULT_PROMPT="[1]"
+        fi
+        echo ""
+        echo "How will users access Worqlo?"
+        echo "  [1] localhost (single machine, dev)"
+        echo "  [2] IP address (network access, e.g. 192.168.1.100)"
+        echo "  [3] Domain (e.g. worqlo.company.com)"
+        read -p "Choice $DEFAULT_PROMPT: " ACCESS_CHOICE </dev/tty
+        ACCESS_CHOICE=${ACCESS_CHOICE:-$DEFAULT_ACCESS}
+
+        case $ACCESS_CHOICE in
+            1)
+                log_info "Using localhost"
+                ;;
+            2)
+                if [ -n "${SUGGESTED_IP:-}" ]; then
+                    read -p "Server IP address [$SUGGESTED_IP]: " IP_INPUT </dev/tty
+                    IP_ADDR="${IP_INPUT:-$SUGGESTED_IP}"
+                else
+                    read -p "Server IP address (e.g. 192.168.1.100): " IP_ADDR </dev/tty
+                fi
+                if [ -z "$IP_ADDR" ]; then
+                    log_error "IP address is required."
+                    exit 1
+                fi
+                HTTP_PORT_VAL="${HTTP_PORT:-80}"
+                if [ "$HTTP_PORT_VAL" = "80" ]; then
+                    _apply_base_url "http://${IP_ADDR}"
+                else
+                    _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
+                fi
+                ;;
+            3)
+                if [ -n "${DOMAIN:-}" ]; then
+                    _apply_base_url "https://${DOMAIN}"
+                else
+                    read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
+                    if [ -z "$DOMAIN_INPUT" ]; then
+                        log_error "Domain is required."
+                        exit 1
+                    fi
+                    _apply_base_url "https://${DOMAIN_INPUT}"
+                fi
+                ;;
+            *)
+                log_error "Invalid choice"
+                exit 1
+                ;;
+        esac
     fi
 
     # Observability (default Y when no TTY for non-interactive/curl|bash)
@@ -630,7 +636,7 @@ main() {
     [[ "${1:-}" = "--help" ]] || [[ "${1:-}" = "-h" ]] && { show_help; exit 0; }
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║     Worqlo Hosted Installer (GHCR)                           ║${NC}"
+    echo -e "${CYAN}║     Worqlo Hosted Installer (GHCR)                            ║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 
     check_prerequisites
