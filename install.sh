@@ -309,6 +309,11 @@ prompt_config() {
         set -u
     fi
 
+    # Treat generate-secrets placeholders as unset so interactive prompts run
+    case "${SGLANG_BASE_URL:-}" in *your-sglang-host*) unset SGLANG_BASE_URL ;; esac
+    case "${OPENAI_API_KEY:-}" in *your-openai-api-key*) unset OPENAI_API_KEY ;; esac
+    case "${GROK_API_KEY:-}" in *your-grok-api-key*) unset GROK_API_KEY ;; esac
+
     # GHCR_OWNER
     if [ -z "${GHCR_OWNER:-}" ]; then
         echo ""
