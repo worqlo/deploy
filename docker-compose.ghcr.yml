@@ -24,17 +24,17 @@ services:
   # Use pre-built images; remove build so Compose pulls instead of building.
   # Requires Compose v2.17+ for !reset; otherwise omit this file and set image in .env.
   api:
-    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:?Set GHCR_OWNER (e.g. your-github-username) for pre-built images}/worqlo-api:${IMAGE_TAG:-latest}
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-worqlo}/worqlo-api:${IMAGE_TAG:-latest}
     build: !reset null
 
   chat-ui:
-    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:?Set GHCR_OWNER for pre-built images}/worqlo-chat-ui:${IMAGE_TAG:-latest}
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-worqlo}/worqlo-chat-ui:${IMAGE_TAG:-latest}
     build: !reset null
 
   celery-worker:
-    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER}/worqlo-api:${IMAGE_TAG:-latest}
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-worqlo}/worqlo-api:${IMAGE_TAG:-latest}
     build: !reset null
 
   celery-beat:
-    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER}/worqlo-api:${IMAGE_TAG:-latest}
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-worqlo}/worqlo-api:${IMAGE_TAG:-latest}
     build: !reset null
