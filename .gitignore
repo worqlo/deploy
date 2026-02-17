@@ -13,6 +13,8 @@ nginx/ssl/*
 
 # Local/cache
 .pre_update_images.json
+vocab_cache/*
+!vocab_cache/.gitkeep
 
 # OS
 .DS_Store

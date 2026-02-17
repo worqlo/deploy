@@ -1,0 +1,2 @@
+# Keep this directory in git. Run deploy/scripts/download_harmony_vocab.py from repo root
+# to populate the Harmony encoding vocab so Docker image has native token counting.
