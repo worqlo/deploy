@@ -71,7 +71,9 @@ services:
   # ===========================================================================
   chat-ui:
     build:
-      context: ../../chat-ui
+      # When deploy is submodule at backend/deploy: ../chat-ui = backend/chat-ui
+      # Standalone (install.sh): GHCR override skips build
+      context: ../chat-ui
       dockerfile: Dockerfile
       args:
         # Build-time env for client-side (browser) API calls via nginx
