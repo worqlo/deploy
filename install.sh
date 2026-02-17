@@ -282,11 +282,10 @@ prompt_config() {
     # LLM provider
     if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ -z "${OLLAMA_BASE_URL:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
         if ! [ -t 0 ]; then
-            # Non-interactive: default to SGLang (user configures .env later)
-            USE_OLLAMA_PROFILE=""
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
-            rm -f .env.bak
-            log_info "LLM_PROVIDER=sglang (default). Edit .env to set SGLANG_BASE_URL when ready."
+            # Non-interactive: default to SGLang, require SGLANG_BASE_URL
+            log_error "No LLM config set. For non-interactive install, set SGLANG_BASE_URL+SGLANG_MODEL (default), OPENAI_API_KEY, or GROK_API_KEY."
+            log_error "Example: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash"
+            exit 1
         else
         echo ""
         echo "Select LLM provider:"
