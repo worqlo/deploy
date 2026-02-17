@@ -41,7 +41,7 @@ DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 # Install directory
 if [ "$(uname)" = "Darwin" ]; then
-    INSTALL_DIR="${INSTALL_DIR:-$HOME/worqlo}"
+    INSTALL_DIR="${INSTALL_DIR:-/tmp/worqlo}"
 else
     INSTALL_DIR="${INSTALL_DIR:-/opt/worqlo}"
 fi
@@ -191,8 +191,8 @@ fetch_deploy_bundle() {
         else
             # Clone requires empty directory (or non-existent)
             if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ] && [ ! -f "$INSTALL_DIR/docker-compose.ghcr.yml" ]; then
-                log_error "$INSTALL_DIR exists and is not empty. Use an empty directory:"
-                log_error "  INSTALL_DIR=/path/to/empty/dir curl -fsSL ... | bash"
+                log_error "$INSTALL_DIR exists and is not empty. Use a different directory:"
+                log_error "  INSTALL_DIR=/tmp/worqlo-other curl -fsSL ... | bash"
                 exit 1
             fi
             log_info "Cloning $DEPLOY_REPO..."
@@ -202,7 +202,7 @@ fetch_deploy_bundle() {
                 if [ -n "${CLONE_ERR:-}" ] && [ -s "$CLONE_ERR" ]; then
                     log_error "$(cat "$CLONE_ERR")"
                 fi
-                log_error "If $INSTALL_DIR exists with other content, use: INSTALL_DIR=/path/to/empty/dir"
+                log_error "If $INSTALL_DIR exists with other content, use: INSTALL_DIR=/tmp/worqlo-other"
                 exit 1
             fi
             log_success "Deploy bundle fetched"

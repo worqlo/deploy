@@ -70,7 +70,7 @@ The script verifies:
 
 ### Step 2: Install Directory
 
-- **macOS:** `INSTALL_DIR` defaults to `$HOME/worqlo` (no sudo)
+- **macOS:** `INSTALL_DIR` defaults to `/tmp/worqlo` (no sudo)
 - **Linux:** `INSTALL_DIR` defaults to `/opt/worqlo` (may require sudo)
 
 Override with `INSTALL_DIR=/custom/path` before the curl command.
