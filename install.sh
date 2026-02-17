@@ -280,11 +280,14 @@ prompt_config() {
     ensure_env "IMAGE_TAG" "${IMAGE_TAG:-latest}"
 
     # LLM provider
-    if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ]; then
+    if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ -z "${OLLAMA_BASE_URL:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
         if ! [ -t 0 ]; then
-            log_error "No TTY and no LLM config set. For non-interactive install, set SGLANG_BASE_URL+SGLANG_MODEL, OPENAI_API_KEY, or GROK_API_KEY."
-            exit 1
-        fi
+            # Non-interactive: default to SGLang (user configures .env later)
+            USE_OLLAMA_PROFILE=""
+            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
+            rm -f .env.bak
+            log_info "LLM_PROVIDER=sglang (default). Edit .env to set SGLANG_BASE_URL when ready."
+        else
         echo ""
         echo "Select LLM provider:"
         echo "  [1] SGLang (self-hosted, requires BASE_URL + MODEL)"
@@ -338,6 +341,7 @@ prompt_config() {
                 ;;
         esac
         rm -f .env.bak
+        fi
     else
         # Non-interactive: env vars set (SGLang first as default)
         USE_OLLAMA_PROFILE=""
