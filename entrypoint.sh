@@ -148,7 +148,8 @@ run_migrations() {
         if alembic upgrade head; then
             log_success "Migrations completed successfully!"
         else
-            log_warn "Migration command returned non-zero, but continuing..."
+            log_error "Migrations failed"
+            exit 1
         fi
     else
         log_warn "alembic.ini not found, skipping migrations"

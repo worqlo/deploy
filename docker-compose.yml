@@ -195,6 +195,8 @@ services:
       # Frontend URLs for email links (activation, password reset)
       - FRONTEND_RESET_PASSWORD_URL=${FRONTEND_RESET_PASSWORD_URL:-http://localhost/reset-password}
       - FRONTEND_LOGIN_URL=${FRONTEND_LOGIN_URL:-http://localhost}
+      # Internal Chat UI URL (for root proxy when tenants exist)
+      - CHAT_UI_INTERNAL_URL=${CHAT_UI_INTERNAL_URL:-http://chat-ui:3000}
       # LangSmith (optional)
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
