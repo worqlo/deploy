@@ -8,11 +8,22 @@ Deploy assets for self-hosting Worqlo with pre-built Docker images from GitHub C
 curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 ```
 
-Or review first:
+## Interactive Install
+
+Run the script directly (not piped) to get prompts for each setting:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh && less install.sh && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh
+bash install.sh
 ```
+
+You'll be prompted for:
+- **GHCR owner** (e.g. worqlo)
+- **Image tag** (latest or v1.0.0)
+- **LLM provider**: SGLang, OpenAI, Grok, or Ollama
+- **Enable Grafana/Prometheus?** (Y/n)
+
+Best practice: review before running: `less install.sh` then `bash install.sh`
 
 ## Non-Interactive Install
 
