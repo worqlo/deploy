@@ -1,0 +1,146 @@
+// =============================================================================
+// Grafana Alloy Configuration
+// =============================================================================
+// Collects logs from Docker containers and ships to Loki
+// Replaces deprecated Promtail (EOL: Feb 2026)
+// Docs: https://grafana.com/docs/alloy/latest/
+
+// =============================================================================
+// Docker Discovery - Find running containers
+// =============================================================================
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+  
+  filter {
+    name = "label"
+    values = ["com.docker.compose.project=worqlo"]
+  }
+}
+
+// =============================================================================
+// Relabel - Extract container metadata
+// =============================================================================
+discovery.relabel "docker" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+}
+
+// =============================================================================
+// Docker Log Source - Collect logs from containers
+// =============================================================================
+loki.source.docker "docker" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker.output
+  forward_to = [loki.process.docker.receiver]
+  
+  relabel_rules = discovery.relabel.docker.rules
+}
+
+// =============================================================================
+// Log Processing Pipeline
+// =============================================================================
+loki.process "docker" {
+  forward_to = [loki.write.loki.receiver]
+
+  // ==========================================================================
+  // PII Redaction (GDPR Compliance)
+  // ==========================================================================
+  
+  // Mask email addresses: user@domain.com -> u***@***.***
+  stage.replace {
+    expression = "([a-zA-Z0-9._%+-]{1})[a-zA-Z0-9._%+-]*@([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"
+    replace    = "$1***@***.***"
+  }
+  
+  // Anonymize IPv4 addresses: 185.199.110.133 -> 185.199.xxx.xxx
+  stage.replace {
+    expression = "(\\d+\\.\\d+)\\.(\\d+)\\.(\\d+)"
+    replace    = "$1.xxx.xxx"
+  }
+  
+  // Redact Authorization headers (Bearer tokens, Basic auth)
+  stage.replace {
+    expression = "(?i)(authorization:?\\s*)(bearer\\s+|basic\\s+)?([a-zA-Z0-9._-]{10,})"
+    replace    = "$1$2[REDACTED]"
+  }
+  
+  // Mask password query parameters
+  stage.replace {
+    expression = "(?i)([?&]password=)([^&\\s]+)"
+    replace    = "$1[REDACTED]"
+  }
+  
+  // Mask token query parameters
+  stage.replace {
+    expression = "(?i)([?&]token=)([^&\\s]+)"
+    replace    = "$1[REDACTED]"
+  }
+  
+  // Mask secret query parameters
+  stage.replace {
+    expression = "(?i)([?&]secret=)([^&\\s]+)"
+    replace    = "$1[REDACTED]"
+  }
+  
+  // Mask API keys in query parameters
+  stage.replace {
+    expression = "(?i)([?&]api[_-]?key=)([^&\\s]+)"
+    replace    = "$1[REDACTED]"
+  }
+
+  // ==========================================================================
+  // Log Type Extraction
+  // ==========================================================================
+  
+  // Extract log type from Worqlo logs: [HTTP], [TOOL], [AGENT], [SYSTEM], [WS]
+  stage.regex {
+    expression = "\\[(?P<log_type>HTTP|TOOL|AGENT|SYSTEM|WS|LLM)\\]"
+  }
+
+  stage.labels {
+    values = {
+      log_type = "",
+    }
+  }
+
+  // ==========================================================================
+  // Noise Reduction
+  // ==========================================================================
+  
+  // Drop noisy health check logs
+  stage.drop {
+    expression  = "(/health|/healthz|/ready|/metrics)"
+    drop_counter_reason = "health_check"
+  }
+
+  // Drop static asset requests (Next.js, images, fonts, etc.)
+  stage.drop {
+    expression = "(_next/static/|\\.(js|css|svg|ico|png|jpg|jpeg|gif|webp|woff|woff2|ttf|eot)\\s)"
+    drop_counter_reason = "static_assets"
+  }
+}
+
+// =============================================================================
+// Loki Writer - Send logs to Loki
+// =============================================================================
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

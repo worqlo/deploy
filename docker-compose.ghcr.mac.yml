@@ -1,0 +1,24 @@
+# =============================================================================
+# Apple Silicon override: force linux/amd64 (avoids arm64/v8 manifest mismatch)
+# =============================================================================
+# Use when deploying on M1/M2/M3 Mac:
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.ghcr.mac.yml up -d
+#
+# With observability:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml -f docker-compose.ghcr.yml -f docker-compose.ghcr.mac.yml up -d
+# =============================================================================
+
+name: worqlo
+
+services:
+  api:
+    platform: linux/amd64
+
+  chat-ui:
+    platform: linux/amd64
+
+  celery-worker:
+    platform: linux/amd64
+
+  celery-beat:
+    platform: linux/amd64

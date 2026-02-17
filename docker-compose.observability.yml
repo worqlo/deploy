@@ -1,0 +1,268 @@
+# =============================================================================
+# Worqlo Observability Stack - Docker Compose Overlay
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+# =============================================================================
+
+name: worqlo
+
+services:
+  # ===========================================================================
+  # Prometheus - Metrics Collection
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.0  # Updated from v2.48.0
+    container_name: worqlo-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - backend-network
+      - db-network
+      - observability-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Security hardening
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  # ===========================================================================
+  # Grafana - Metrics Visualization
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:11.3.0  # Updated from 10.2.0
+    container_name: worqlo-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      # Removed GF_INSTALL_PLUGINS - plugins can be installed manually if needed
+      # Security settings
+      - GF_SECURITY_COOKIE_SECURE=false  # Set to true with HTTPS
+      - GF_SECURITY_COOKIE_SAMESITE=lax
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - backend-network
+      - observability-network
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Security hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ===========================================================================
+  # Loki - Log Aggregation
+  # ===========================================================================
+  loki:
+    image: grafana/loki:3.2.0  # Updated from 2.9.3
+    container_name: worqlo-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - backend-network
+      - observability-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Security hardening
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ===========================================================================
+  # Grafana Alloy - Log Collector (replaces deprecated Promtail)
+  # ===========================================================================
+  alloy:
+    image: grafana/alloy:v1.5.1  # Already latest stable
+    container_name: worqlo-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    networks:
+      - backend-network
+      - observability-network
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:12345/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Security hardening (relaxed for Alloy to access Docker socket and write data)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    # Note: Alloy needs some capabilities to access Docker socket and write data
+    # Don't drop all capabilities for this service
+
+  # ===========================================================================
+  # PostgreSQL Exporter - Database Metrics
+  # ===========================================================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0  # Already latest stable
+    container_name: worqlo-postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-worqlo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-worqlo}?sslmode=disable
+    networks:
+      - db-network
+      - observability-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Security hardening
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ===========================================================================
+  # Redis Exporter - Cache Metrics
+  # ===========================================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0  # Updated from v1.55.0
+    container_name: worqlo-redis-exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    networks:
+      - db-network
+      - observability-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Security hardening
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ===========================================================================
+  # Update Nginx to expose Grafana
+  # ===========================================================================
+  nginx:
+    volumes:
+      - ./nginx/nginx-with-grafana.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      grafana:
+        condition: service_healthy
+
+# =============================================================================
+# Additional Volumes for Observability
+# =============================================================================
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  alloy-data:
+
+# =============================================================================
+# Networks (extends main stack's networks when used with -f docker-compose.yml)
+# =============================================================================
+networks:
+  # These networks are defined in docker-compose.yml and will be merged
+  backend-network:
+  db-network:
+  
+  # Observability network - non-internal to allow port exposure
+  observability-network:
+    driver: bridge
+    internal: false
+

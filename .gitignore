@@ -1,0 +1,19 @@
+# Environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# User-generated
+backups/
+nginx/ssl/
+*.pem
+*.crt
+*.key
+
+# Local/cache
+.pre_update_images.json
+vocab_cache/*
+!vocab_cache/.gitkeep
+
+# OS
+.DS_Store

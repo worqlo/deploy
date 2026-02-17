@@ -1,0 +1,40 @@
+# =============================================================================
+# Override to use pre-built images from GitHub Container Registry (GHCR)
+# =============================================================================
+# Usage (from deploy/):
+#   export GHCR_OWNER=your-github-org-or-username
+#   export IMAGE_TAG=latest   # or v1.0.0
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# With observability:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml -f docker-compose.ghcr.yml up -d
+#
+# Set GHCR_OWNER to the GitHub org or user that published the images.
+# Images are: ghcr.io/GHCR_OWNER/worqlo-api, ghcr.io/GHCR_OWNER/worqlo-chat-ui
+#
+# Platform selection (Docker auto-selects native arch when not set):
+# - x86_64 Linux/Mac: native amd64
+# - arm64 Linux (Graviton, Pi): native arm64
+# - Apple Silicon: use docker-compose.ghcr.mac.yml (BuildKit strips arm64/v8 from manifest)
+# =============================================================================
+
+name: worqlo
+
+services:
+  # Use pre-built images; remove build so Compose pulls instead of building.
+  # Requires Compose v2.17+ for !reset; otherwise omit this file and set image in .env.
+  api:
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:?Set GHCR_OWNER (e.g. your-github-username) for pre-built images}/worqlo-api:${IMAGE_TAG:-latest}
+    build: !reset null
+
+  chat-ui:
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:?Set GHCR_OWNER for pre-built images}/worqlo-chat-ui:${IMAGE_TAG:-latest}
+    build: !reset null
+
+  celery-worker:
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER}/worqlo-api:${IMAGE_TAG:-latest}
+    build: !reset null
+
+  celery-beat:
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER}/worqlo-api:${IMAGE_TAG:-latest}
+    build: !reset null
