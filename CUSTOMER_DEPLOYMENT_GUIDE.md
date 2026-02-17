@@ -174,11 +174,7 @@ If you want a hosted installer:
 3. Maintain a minimal repo with only `deploy/` and have the script clone it
 4. Script runs `generate-secrets.sh`, sets env vars, and runs compose with the correct GHCR override
 
-Your existing `install.sh` has the right structure; it just needs to be updated to:
-
-- Use GHCR by default when `GHCR_OWNER` is set
-- Add platform-specific compose files for Apple Silicon
-- Pin `IMAGE_TAG` for version control
+The `install.sh` uses GHCR by default when `GHCR_OWNER` is set, includes platform-specific compose files for Apple Silicon, and supports `IMAGE_TAG` for version pinning.
 
 ---
 

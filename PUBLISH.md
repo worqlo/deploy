@@ -33,16 +33,15 @@ The install script references `https://get.worqlo.ai/install.sh`. Configure one 
 - **Option B:** Serve install.sh from your CDN/domain
 - **Option C:** Users can run: `curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash`
 
-## Sync from backend
+## Updating from backend
 
-When `backend/deploy/` changes, sync to this repo:
+The `deploy/` directory is a submodule of `worqlo/backend`. To publish changes to `worqlo/deploy`:
 
 ```bash
-cd /path/to/backend
-rsync -av --exclude='.env' --exclude='.pre_update_images.json' --exclude='vocab_cache/*' \
-  deploy/ ../worqlo-deploy/
-# Then remove backend-specific files from worqlo-deploy (Dockerfile, entrypoint.sh, etc.)
-cd ../worqlo-deploy && git add -A && git status
+cd /path/to/backend/deploy
+git add -A && git status
+git commit -m "Your changes"
+git push origin main
 ```
 
-Consider adding a CI workflow in `backend` to sync on release tags.
+The backend's `release-images.yml` workflow builds and pushes Docker images to GHCR when you push a version tag (e.g. `v1.0.0`). Ensure deploy assets are pushed to `worqlo/deploy` before tagging a backend release.

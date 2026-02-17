@@ -14,7 +14,7 @@ curl -fsSL https://get.worqlo.ai/install.sh | bash
 
 **Context:** The backend repository is private. GHCR packages (`worqlo-api`, `worqlo-chat-ui`) are public. Customers need deploy files (docker-compose, nginx, scripts) without cloning the private repo.
 
-**Note:** The existing `install.sh` in this repo builds from source and clones the full backend. The hosted installer described here is a *different* flow: it fetches deploy files from a public source and pulls pre-built images from GHCR.
+**Note:** The `install.sh` in this repo fetches deploy files from a public source (e.g. `worqlo/deploy`) and pulls pre-built images from GHCR. No build from source is required.
 
 ---
 
@@ -217,11 +217,11 @@ The installer must obtain deploy files from a **public** source:
 
 | Option | Pros | Cons |
 |--------|------|------|
-| **Public repo `worqlo/deploy`** | Versioned, `git pull` for updates | Must keep in sync with backend releases |
+| **Public repo `worqlo/deploy`** | Versioned, `git pull` for updates | Deploy is a submodule of backend; push from submodule to publish |
 | **GitHub Releases tarball** | Versioned, no git | Manual release step |
 | **CDN tarball** | Fast, controlled | Extra hosting |
 
-**Recommended:** Public `worqlo/deploy` repo. On each backend release, sync deploy assets to that repo and tag the release.
+**Recommended:** Public `worqlo/deploy` repo. Deploy is a submodule of backend; changes are committed and pushed from the submodule. On backend release tags, `release-images.yml` builds and pushes Docker images to GHCR.
 
 ---
 
@@ -274,5 +274,5 @@ If `GHCR_OWNER` and the LLM key are set, skip prompts and proceed.
 - [ ] Add/adapt `install.sh` to that repo
 - [ ] Configure `get.worqlo.ai` → installer script URL
 - [ ] Document one-line install in customer docs
-- [ ] Add release workflow to sync deploy bundle on backend tag
+- [x] Release workflow (`release-images.yml`) builds and pushes images to GHCR on backend tag
 - [ ] Test on: macOS (Intel, Apple Silicon), Ubuntu, Debian
