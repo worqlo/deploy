@@ -80,6 +80,13 @@ git pull origin main
 ./scripts/update-ghcr.sh
 ```
 
+## Third-Party Licenses and SBOM
+
+For customer compliance and audit:
+
+- **License list**: `THIRD_PARTY_LICENSES.md` is included in the API Docker image at `/app/THIRD_PARTY_LICENSES.md`
+- **SBOM**: When you push a version tag (e.g. `v1.0.0`), the release workflow produces `sbom-backend.json` and `sbom-chat-ui.json` as workflow artifacts. Download them from the [GitHub Actions run](https://github.com/worqlo/backend/actions) or from the release page.
+
 ## Documentation
 
 - [Customer Deployment Guide](CUSTOMER_DEPLOYMENT_GUIDE.md)

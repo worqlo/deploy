@@ -82,6 +82,8 @@ WORKDIR /app
 
 # Copy application code (connectors are app.connectors under app/)
 COPY --chown=worqlo:worqlo app/ ./app/
+# Third-party license attribution (generated in CI; placeholder for local builds)
+COPY --chown=worqlo:worqlo deploy/THIRD_PARTY_LICENSES.md ./
 COPY --chown=worqlo:worqlo migrations/ ./migrations/
 # Seed script required for startup (creates admin/user roles)
 COPY --chown=worqlo:worqlo deploy/scripts/seed.py ./deploy/scripts/seed.py
