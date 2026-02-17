@@ -249,11 +249,65 @@ ensure_env() {
     fi
 }
 
+# Apply BASE_URL to all URL-related env vars (for IP or domain access)
+_apply_base_url() {
+    local base="$1"
+    base="${base%/}"  # strip trailing slash
+    local scheme host port
+    case "$base" in
+        https://*)
+            scheme="https"
+            base="${base#https://}"
+            ;;
+        http://*)
+            scheme="http"
+            base="${base#http://}"
+            ;;
+        *)
+            scheme="http"
+            ;;
+    esac
+    if [[ "$base" == *:* ]]; then
+        host="${base%%:*}"
+        port="${base##*:}"
+    else
+        host="$base"
+        port=""
+    fi
+    local ws_scheme="ws"
+    [ "$scheme" = "https" ] && ws_scheme="wss"
+
+    local base_with_port="$base"
+    [ -n "$port" ] && base_with_port="${scheme}://${host}:${port}" || base_with_port="${scheme}://${host}"
+
+    ensure_env "NEXT_PUBLIC_API_URL" "${base_with_port}/api"
+    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "${ws_scheme}://${host}${port:+:${port}}/ws}"
+    ensure_env "NEXTAUTH_URL" "$base_with_port"
+    ensure_env "FRONTEND_RESET_PASSWORD_URL" "${base_with_port}/reset-password"
+    ensure_env "FRONTEND_LOGIN_URL" "$base_with_port"
+    # CORS: base URL plus common variants (port 80, 3000)
+    local cors_origins="${base_with_port}"
+    [ -n "$host" ] && cors_origins="${base_with_port},${scheme}://${host}:80,${scheme}://${host}:3000"
+    ensure_env "CORS_ALLOW_ORIGINS" "$cors_origins"
+    ensure_env "S3_PUBLIC_ENDPOINT_URL" "http://${host}:9000"
+    ensure_env "SALESFORCE_REDIRECT_URI" "${base_with_port}/integrations/salesforce/callback"
+}
+
 # =============================================================================
 # Step 5: Configuration prompts (or use env vars for non-interactive)
 # =============================================================================
 prompt_config() {
     log_step "Configuration"
+
+    # Load .env so we can use HTTP_PORT etc.
+    if [ -f .env ]; then
+        set +u
+        set -a
+        # shellcheck source=/dev/null
+        source .env 2>/dev/null || true
+        set +a
+        set -u
+    fi
 
     # GHCR_OWNER
     if [ -z "${GHCR_OWNER:-}" ]; then
@@ -278,6 +332,67 @@ prompt_config() {
     ensure_env "GHCR_OWNER" "$GHCR_OWNER"
     ensure_env "GHCR_REGISTRY" "${GHCR_REGISTRY:-ghcr.io}"
     ensure_env "IMAGE_TAG" "${IMAGE_TAG:-latest}"
+
+    # Access URL - how will users reach Worqlo? (localhost / IP / domain)
+    if [ -n "${BASE_URL:-}" ]; then
+        # Non-interactive: BASE_URL set (e.g. BASE_URL=http://192.168.1.100 curl ... | bash)
+        _apply_base_url "$BASE_URL"
+    elif [ -n "${DOMAIN:-}" ]; then
+        # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com)
+        _apply_base_url "https://${DOMAIN}"
+    elif [ -t 0 ]; then
+        echo ""
+        echo "How will users access Worqlo?"
+        echo "  [1] localhost (single machine, dev)"
+        echo "  [2] IP address (network access, e.g. 192.168.1.100)"
+        echo "  [3] Domain (e.g. worqlo.company.com)"
+        read -p "Choice [1]: " ACCESS_CHOICE </dev/tty
+        ACCESS_CHOICE=${ACCESS_CHOICE:-1}
+
+        case $ACCESS_CHOICE in
+            1)
+                log_info "Using localhost (default)"
+                ;;
+            2)
+                # Auto-detect primary IPv4 as suggestion (exclude loopback)
+                SUGGESTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || \
+                    ip route get 1 2>/dev/null | awk '{print $7; exit}' || \
+                    ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
+                if [ -n "$SUGGESTED_IP" ]; then
+                    read -p "Server IP address [$SUGGESTED_IP]: " IP_INPUT </dev/tty
+                    IP_ADDR="${IP_INPUT:-$SUGGESTED_IP}"
+                else
+                    read -p "Server IP address (e.g. 192.168.1.100): " IP_ADDR </dev/tty
+                fi
+                if [ -z "$IP_ADDR" ]; then
+                    log_error "IP address is required."
+                    exit 1
+                fi
+                HTTP_PORT_VAL="${HTTP_PORT:-80}"
+                if [ "$HTTP_PORT_VAL" = "80" ]; then
+                    _apply_base_url "http://${IP_ADDR}"
+                else
+                    _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
+                fi
+                ;;
+            3)
+                if [ -n "${DOMAIN:-}" ]; then
+                    _apply_base_url "https://${DOMAIN}"
+                else
+                    read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
+                    if [ -z "$DOMAIN_INPUT" ]; then
+                        log_error "Domain is required."
+                        exit 1
+                    fi
+                    _apply_base_url "https://${DOMAIN_INPUT}"
+                fi
+                ;;
+            *)
+                log_error "Invalid choice"
+                exit 1
+                ;;
+        esac
+    fi
 
     # LLM provider
     if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ -z "${OLLAMA_BASE_URL:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
@@ -461,18 +576,20 @@ print_summary() {
         set +a
         set -u
     fi
-    BASE_URL="http://localhost"
-    if [ -n "${DOMAIN:-}" ]; then
-        BASE_URL="https://${DOMAIN}"
+    DISPLAY_URL="http://localhost"
+    if [ -n "${NEXTAUTH_URL:-}" ] && [ "${NEXTAUTH_URL:-}" != "http://localhost" ]; then
+        DISPLAY_URL="$NEXTAUTH_URL"
+    elif [ -n "${DOMAIN:-}" ]; then
+        DISPLAY_URL="https://${DOMAIN}"
     elif [ -n "${HTTP_PORT:-}" ] && [ "${HTTP_PORT:-}" != "80" ]; then
-        BASE_URL="http://localhost:${HTTP_PORT}"
+        DISPLAY_URL="http://localhost:${HTTP_PORT}"
     fi
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  Worqlo installed successfully!${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "  URL:      $BASE_URL"
+    echo "  URL:      $DISPLAY_URL"
     echo "  Location: $INSTALL_DIR"
     echo "  Update:   cd $INSTALL_DIR && ./scripts/update-ghcr.sh"
     LOGS_FILES="-f docker-compose.yml"
@@ -494,8 +611,8 @@ show_help() {
     echo "  --help    Show this help"
     echo ""
     echo "Environment variables (non-interactive):"
-    echo "  GHCR_OWNER, IMAGE_TAG, SGLANG_BASE_URL, SGLANG_MODEL, OPENAI_API_KEY, GROK_API_KEY,"
-    echo "  SGLANG_MODEL, ENABLE_OBSERVABILITY, INSTALL_DIR, DOMAIN, DEPLOY_REPO,"
+    echo "  GHCR_OWNER, IMAGE_TAG, BASE_URL, DOMAIN, SGLANG_BASE_URL, SGLANG_MODEL,"
+    echo "  OPENAI_API_KEY, GROK_API_KEY, ENABLE_OBSERVABILITY, INSTALL_DIR, DEPLOY_REPO,"
     echo "  DEPLOY_BRANCH, DEPLOY_TARBALL_URL, DEPLOY_CDN_URL"
     echo ""
     echo "Best practice: curl -fsSL URL -o install.sh && less install.sh && bash install.sh"

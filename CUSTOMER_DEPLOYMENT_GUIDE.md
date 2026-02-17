@@ -150,6 +150,19 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml -f dock
 open http://localhost:3001
 ```
 
+### Network Access (IP)
+
+To access Worqlo from other machines on the network (e.g. `http://192.168.1.100`):
+
+**One-line install:**
+```bash
+BASE_URL=http://192.168.1.100 SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL https://get.worqlo.ai/install.sh | bash
+```
+
+**Interactive install:** When prompted "How will users access Worqlo?", choose option 2 (IP address). The installer will suggest your server's primary IP.
+
+**Manual .env:** Set `BASE_URL=http://YOUR_IP` before running `generate-secrets.sh`, or edit `.env` and set `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL`, `CORS_ALLOW_ORIGINS`, etc. to use your IP.
+
 ---
 
 ## 5. Documentation Checklist
