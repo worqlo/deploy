@@ -113,10 +113,12 @@ Containers will show "AMD64" warnings in Docker Desktop; they are harmless and r
 
 ### Example: Full Deployment
 
+**Note:** This repo (`worqlo/deploy`) is for GHCR-based installs only. For building from source, clone `worqlo/backend` and use `backend/deploy/`.
+
 ```bash
-# 1. Clone or download deploy bundle
-git clone https://github.com/worqlo/backend.git
-cd backend/deploy
+# 1. Clone deploy bundle (pre-built images from GHCR)
+git clone https://github.com/worqlo/deploy.git
+cd deploy
 
 # 2. Generate secrets
 ./scripts/generate-secrets.sh > .env
@@ -183,7 +185,7 @@ Your existing `install.sh` has the right structure; it just needs to be updated 
 ## Support
 
 - **Documentation:** https://docs.worqlo.com
-- **Issues:** https://github.com/worqlo/backend/issues
+- **Issues:** https://github.com/worqlo/deploy/issues (deploy) / https://github.com/worqlo/backend/issues (source)
 - **Community:** https://discord.gg/worqlo
 
 ---

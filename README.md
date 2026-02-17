@@ -5,19 +5,19 @@ Deploy assets for self-hosting Worqlo with pre-built Docker images from GitHub C
 ## One-Line Install
 
 ```bash
-curl -fsSL https://get.worqlo.ai/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 ```
 
 Or review first:
 
 ```bash
-curl -fsSL https://get.worqlo.ai/install.sh -o install.sh && less install.sh && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh && less install.sh && bash install.sh
 ```
 
 ## Non-Interactive Install
 
 ```bash
-GHCR_OWNER=worqlo OPENAI_API_KEY=sk-your-key curl -fsSL https://get.worqlo.ai/install.sh | bash
+GHCR_OWNER=worqlo OPENAI_API_KEY=sk-your-key curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 ```
 
 ## Manual Setup

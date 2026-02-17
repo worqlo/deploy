@@ -5,15 +5,14 @@
 
 # User-generated
 backups/
-nginx/ssl/
+nginx/ssl/*
+!nginx/ssl/.gitkeep
 *.pem
 *.crt
 *.key
 
 # Local/cache
 .pre_update_images.json
-vocab_cache/*
-!vocab_cache/.gitkeep
 
 # OS
 .DS_Store

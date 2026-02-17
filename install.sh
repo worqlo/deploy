@@ -3,12 +3,12 @@
 # Worqlo Hosted Installer (GHCR)
 # =============================================================================
 # One-line install using pre-built Docker images from GitHub Container Registry.
-# Usage: curl -fsSL https://get.worqlo.ai/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 #
 # Non-interactive: GHCR_OWNER=worqlo OPENAI_API_KEY=sk-xxx curl -fsSL ... | bash
 #
 # Best practice: Review script before running:
-#   curl -fsSL https://get.worqlo.ai/install.sh -o install.sh && less install.sh && bash install.sh
+#   curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh && less install.sh && bash install.sh
 # =============================================================================
 
 set -euo pipefail
