@@ -16,8 +16,22 @@ curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o in
 
 ## Non-Interactive Install
 
+Requires an LLM config. SGLang (default):
+
+```bash
+SGLANG_BASE_URL=http://your-sglang-host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
+```
+
+Or OpenAI / Grok:
+
 ```bash
 GHCR_OWNER=worqlo OPENAI_API_KEY=sk-your-key curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
+```
+
+If `~/worqlo` exists with other content, use an empty directory:
+
+```bash
+INSTALL_DIR=/opt/worqlo SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash
 ```
 
 ## Manual Setup

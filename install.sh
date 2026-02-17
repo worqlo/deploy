@@ -5,7 +5,7 @@
 # One-line install using pre-built Docker images from GitHub Container Registry.
 # Usage: curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 #
-# Non-interactive: GHCR_OWNER=worqlo OPENAI_API_KEY=sk-xxx curl -fsSL ... | bash
+# Non-interactive: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash
 #
 # Best practice: Review script before running:
 #   curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh && less install.sh && bash install.sh
