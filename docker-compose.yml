@@ -130,6 +130,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    env_file:
+      - .env
     container_name: worqlo-api
     restart: unless-stopped
     # Remove external port - only accessible via nginx
@@ -165,6 +167,7 @@ services:
       - SGLANG_WARMUP_ENABLED=${SGLANG_WARMUP_ENABLED:-true}
       # Harmony/tiktoken vocab cache (SGLang provider; writable in image)
       - TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_RS_CACHE_DIR:-/app/.cache/tiktoken_rs}
+      # Embedding (Knowledge Base) - from env_file only; env block would override with wrong value
       # Storage (MinIO/S3)
       - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-worqlo}
@@ -204,6 +207,9 @@ services:
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-worqlo-self-hosted}
     volumes:
       - uploads-data:/app/uploads
+      - ../app/config.py:/app/app/config.py:ro
+      - ../app/domain/models.py:/app/app/domain/models.py:ro
+      - ../app/services/knowledge_base.py:/app/app/services/knowledge_base.py:ro
     networks:
       - backend-network
       - db-network
@@ -243,6 +249,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    env_file:
+      - .env
     container_name: worqlo-celery-worker
     restart: unless-stopped
     # Pool is auto-detected in celery_app.py: prefork on Linux (Docker)
@@ -278,6 +286,7 @@ services:
       - SGLANG_TOP_P=${SGLANG_TOP_P:-}
       - SGLANG_MAX_OUTPUT_TOKENS=${SGLANG_MAX_OUTPUT_TOKENS:-}
       - TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_RS_CACHE_DIR:-/app/.cache/tiktoken_rs}
+      # Embedding (Knowledge Base) - from env_file only so deploy/.env always wins
       # Storage
       - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-worqlo}
@@ -292,6 +301,9 @@ services:
       - CELERY_TASK_DEFAULT_QUEUE=default
     volumes:
       - uploads-data:/app/uploads
+      - ../app/config.py:/app/app/config.py:ro
+      - ../app/domain/models.py:/app/app/domain/models.py:ro
+      - ../app/services/knowledge_base.py:/app/app/services/knowledge_base.py:ro
     networks:
       - backend-network
       - db-network
