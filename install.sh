@@ -112,6 +112,7 @@ check_prerequisites() {
 
     # Disk space (check install target filesystem; use parent if dir doesn't exist yet)
     DISK_CHECK_DIR="${INSTALL_DIR%/*}"
+    # Fallback to $HOME when INSTALL_DIR is root (e.g. /opt) or empty
     [ -z "$DISK_CHECK_DIR" ] || [ "$DISK_CHECK_DIR" = "$INSTALL_DIR" ] && DISK_CHECK_DIR="$HOME"
     if [ "$(uname)" = "Darwin" ]; then
         AVAIL=$(df -g "$DISK_CHECK_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
@@ -232,6 +233,14 @@ generate_config() {
     ./scripts/generate-secrets.sh > .env
     chmod 600 .env
     log_success "Secrets generated"
+}
+
+# Strip http://, https://, and path from URL (for domain or IP input)
+_strip_scheme_and_path() {
+    local d="${1:-}"
+    d="${d#https://}"
+    d="${d#http://}"
+    echo "${d%%/*}"
 }
 
 # Update or append a variable in .env (avoids duplicates on re-run; uses mktemp for security)
@@ -372,7 +381,7 @@ prompt_config() {
                     log_error "OpenAI API key is required"
                     exit 1
                 fi
-                sed -i.bak "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|" .env 2>/dev/null || sed -i '' "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|" .env
+                ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
                 ;;
             3)
                 USE_OLLAMA_PROFILE=""
@@ -382,7 +391,7 @@ prompt_config() {
                     log_error "Grok API key is required"
                     exit 1
                 fi
-                sed -i.bak "s|^GROK_API_KEY=.*|GROK_API_KEY=$GROK_API_KEY|" .env 2>/dev/null || sed -i '' "s|^GROK_API_KEY=.*|GROK_API_KEY=$GROK_API_KEY|" .env
+                ensure_env "GROK_API_KEY" "$GROK_API_KEY"
                 ;;
             4)
                 USE_OLLAMA_PROFILE="--profile ollama"
@@ -394,7 +403,6 @@ prompt_config() {
                 exit 1
                 ;;
         esac
-        rm -f .env.bak
     else
         # Non-interactive: require env vars
         if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
@@ -409,16 +417,16 @@ prompt_config() {
             ensure_env "SGLANG_MODEL" "${SGLANG_MODEL:-openai/gpt-oss-120b}"
         elif [ -n "${OPENAI_API_KEY:-}" ]; then
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
-            sed -i.bak "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|" .env 2>/dev/null || sed -i '' "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|" .env
+            ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
         elif [ -n "${GROK_API_KEY:-}" ]; then
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env
-            sed -i.bak "s|^GROK_API_KEY=.*|GROK_API_KEY=$GROK_API_KEY|" .env 2>/dev/null || sed -i '' "s|^GROK_API_KEY=.*|GROK_API_KEY=$GROK_API_KEY|" .env
+            ensure_env "GROK_API_KEY" "$GROK_API_KEY"
         elif [ -n "${OLLAMA_BASE_URL:-}" ] || [ "${LLM_PROVIDER:-}" = "ollama" ]; then
             USE_OLLAMA_PROFILE="--profile ollama"
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env
         fi
-        rm -f .env.bak
     fi
+    rm -f .env.bak
 
     # Access URL - how will users reach Worqlo? (localhost / IP / domain)
     if [ -n "${BASE_URL:-}" ]; then
@@ -456,6 +464,12 @@ prompt_config() {
             1)
                 log_info "Using localhost"
                 log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using localhost will limit OAuth integrations."
+                HTTP_PORT_VAL="${HTTP_PORT:-80}"
+                if [ "$HTTP_PORT_VAL" = "80" ]; then
+                    _apply_base_url "http://localhost"
+                else
+                    _apply_base_url "http://localhost:${HTTP_PORT_VAL}"
+                fi
                 ;;
             2)
                 if [ -n "${SUGGESTED_IP:-}" ]; then
@@ -464,6 +478,7 @@ prompt_config() {
                 else
                     read -p "Server IP address (e.g. 192.168.1.100): " IP_ADDR </dev/tty
                 fi
+                IP_ADDR="$(_strip_scheme_and_path "$IP_ADDR")"
                 if [ -z "$IP_ADDR" ]; then
                     log_error "IP address is required."
                     exit 1
@@ -478,14 +493,8 @@ prompt_config() {
                 log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using an IP address will limit OAuth integrations."
                 ;;
             3)
-                _strip_domain_scheme() {
-                    local d="${1:-}"
-                    d="${d#https://}"
-                    d="${d#http://}"
-                    echo "${d%%/*}"
-                }
                 if [ -n "${DOMAIN:-}" ]; then
-                    DOMAIN_FOR_SSL="$(_strip_domain_scheme "$DOMAIN")"
+                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN")"
                     _apply_base_url "https://${DOMAIN_FOR_SSL}"
                 else
                     read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
@@ -493,7 +502,7 @@ prompt_config() {
                         log_error "Domain is required."
                         exit 1
                     fi
-                    DOMAIN_FOR_SSL="$(_strip_domain_scheme "$DOMAIN_INPUT")"
+                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN_INPUT")"
                     _apply_base_url "https://${DOMAIN_FOR_SSL}"
                 fi
                 ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
@@ -569,10 +578,8 @@ deploy_services() {
         fi
     fi
 
-    if [ "$use_mac_override" != "true" ]; then
-        log_info "Pulling images from GHCR..."
-        docker compose $compose_args $profile_args pull
-    fi
+    log_info "Pulling images from GHCR..."
+    docker compose $compose_args $profile_args pull
 
     log_info "Starting containers..."
     docker compose $compose_args $profile_args up -d
@@ -659,6 +666,8 @@ show_help() {
     echo ""
     echo "Usage: curl -fsSL https://get.worqlo.ai/install.sh | bash"
     echo "       bash install.sh [--help]"
+    echo ""
+    echo "Canonical: https://get.worqlo.ai/install.sh (redirects to GitHub raw)"
     echo ""
     echo "Options:"
     echo "  --help    Show this help"
