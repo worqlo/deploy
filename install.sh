@@ -426,9 +426,11 @@ prompt_config() {
         _apply_base_url "$BASE_URL"
         [[ "$BASE_URL" != https://* ]] && log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS."
     elif [ -n "${DOMAIN:-}" ]; then
-        # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com)
-        _apply_base_url "https://${DOMAIN}"
-        DOMAIN_FOR_SSL="$DOMAIN"
+        # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com or DOMAIN=https://...)
+        DOMAIN_FOR_SSL="${DOMAIN#https://}"
+        DOMAIN_FOR_SSL="${DOMAIN_FOR_SSL#http://}"
+        DOMAIN_FOR_SSL="${DOMAIN_FOR_SSL%%/*}"
+        _apply_base_url "https://${DOMAIN_FOR_SSL}"
         ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
     elif [ -t 0 ]; then
         # Auto-detect IP to suggest; lean towards IP when detected (network access is common)
@@ -472,22 +474,32 @@ prompt_config() {
                 else
                     _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
                 fi
+                log_success "URLs (NEXTAUTH_URL, CORS, OAuth callbacks) updated in .env for http://${IP_ADDR}${HTTP_PORT_VAL:+:${HTTP_PORT_VAL}}"
                 log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using an IP address will limit OAuth integrations."
                 ;;
             3)
+                _strip_domain_scheme() {
+                    local d="${1:-}"
+                    d="${d#https://}"
+                    d="${d#http://}"
+                    echo "${d%%/*}"
+                }
                 if [ -n "${DOMAIN:-}" ]; then
-                    _apply_base_url "https://${DOMAIN}"
-                    DOMAIN_FOR_SSL="$DOMAIN"
+                    DOMAIN_FOR_SSL="$(_strip_domain_scheme "$DOMAIN")"
+                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
                 else
                     read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
                     if [ -z "$DOMAIN_INPUT" ]; then
                         log_error "Domain is required."
                         exit 1
                     fi
-                    _apply_base_url "https://${DOMAIN_INPUT}"
-                    DOMAIN_FOR_SSL="$DOMAIN_INPUT"
+                    DOMAIN_FOR_SSL="$(_strip_domain_scheme "$DOMAIN_INPUT")"
+                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
                 fi
                 ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
+                log_success "URLs (NEXTAUTH_URL, CORS, OAuth callbacks) updated in .env for https://${DOMAIN_FOR_SSL}"
+                # Verify: if sign-out redirects to localhost, ensure you run 'docker compose' from this directory
+                grep -q "^NEXTAUTH_URL=.*${DOMAIN_FOR_SSL}" .env 2>/dev/null || log_warning "NEXTAUTH_URL may not have updated. Run docker compose from: $(pwd)"
                 if [ -t 0 ]; then
                     read -p "Set up HTTPS now? (required for HubSpot/Salesforce OAuth) [Y/n]: " SSL_YN </dev/tty
                     if [[ "${SSL_YN:-Y}" =~ ^[Yy] ]]; then
@@ -616,7 +628,9 @@ print_summary() {
     if [ -n "${NEXTAUTH_URL:-}" ] && [ "${NEXTAUTH_URL:-}" != "http://localhost" ]; then
         DISPLAY_URL="$NEXTAUTH_URL"
     elif [ -n "${DOMAIN:-}" ]; then
-        DISPLAY_URL="https://${DOMAIN}"
+        DOMAIN_STRIP="${DOMAIN#https://}"
+        DOMAIN_STRIP="${DOMAIN_STRIP#http://}"
+        DISPLAY_URL="https://${DOMAIN_STRIP}"
     elif [ -n "${HTTP_PORT:-}" ] && [ "${HTTP_PORT:-}" != "80" ]; then
         DISPLAY_URL="http://localhost:${HTTP_PORT}"
     fi
@@ -628,6 +642,9 @@ print_summary() {
     echo "  URL:      $DISPLAY_URL"
     echo "  Location: $INSTALL_DIR"
     echo "  Update:   cd $INSTALL_DIR && ./scripts/update-ghcr.sh"
+    if [ -n "${DOMAIN:-}" ] || [ "${DISPLAY_URL#https://}" != "$DISPLAY_URL" ]; then
+        echo "  Note:     Run 'docker compose' from $INSTALL_DIR so sign-out uses your domain (not localhost)"
+    fi
     LOGS_FILES="-f docker-compose.yml"
     [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "docker-compose.observability.yml" ] && LOGS_FILES="$LOGS_FILES -f docker-compose.observability.yml"
     echo "  Logs:     docker compose $LOGS_FILES -f docker-compose.ghcr.yml logs -f api"

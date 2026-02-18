@@ -108,18 +108,12 @@ SGLANG_MODEL=openai/gpt-oss-120b
 # SGLANG_REASONING_EFFORT=medium
 
 # -----------------------------------------------------------------------------
-# URLs (adjust for your domain)
+# URLs (set by install.sh based on your choice: localhost / IP / domain)
 # -----------------------------------------------------------------------------
-# Client-side API URL (browser → nginx reverse proxy → backend)
-# For local development (nginx on port 80 proxies /api and /ws):
+# Defaults for localhost; install.sh overwrites these when you select domain or IP
 NEXT_PUBLIC_API_URL=http://localhost/api
 NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost/ws
 NEXTAUTH_URL=http://localhost
-
-# For production with domain:
-# NEXT_PUBLIC_API_URL=https://yourdomain.com/api
-# NEXT_PUBLIC_WEBSOCKET_URL=wss://yourdomain.com/ws
-# NEXTAUTH_URL=https://yourdomain.com
 
 # Server-side API URL (Next.js API routes → backend in Docker)
 # This is set automatically in docker-compose.yml to http://api:8000/api

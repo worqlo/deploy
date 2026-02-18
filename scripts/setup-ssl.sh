@@ -17,6 +17,9 @@ NC='\033[0m' # No Color
 
 # Configuration
 DOMAIN="${1:-}"
+DOMAIN="${DOMAIN#https://}"
+DOMAIN="${DOMAIN#http://}"
+DOMAIN="${DOMAIN%%/*}"  # strip path if present
 EMAIL="${2:-}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-}"  # Set to non-empty to skip "Continue?" prompt (e.g. when called from install)
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -89,7 +92,19 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if worqlo stack is running
+    # Check if worqlo stack is running (retry: containers may take a moment after compose up)
+    local max_attempts=5
+    local attempt=1
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if docker ps | grep -q worqlo-nginx; then
+            break
+        fi
+        if [ "$attempt" -lt "$max_attempts" ]; then
+            log_info "Waiting for Worqlo stack... (attempt $attempt/$max_attempts)"
+            sleep 3
+        fi
+        attempt=$((attempt + 1))
+    done
     if ! docker ps | grep -q worqlo-nginx; then
         log_error "Worqlo stack is not running. Please start it first:"
         echo "  cd ${DEPLOY_DIR}"
