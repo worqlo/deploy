@@ -290,7 +290,7 @@ _apply_base_url() {
     [ -n "$port" ] && base_with_port="${scheme}://${host}:${port}" || base_with_port="${scheme}://${host}"
 
     ensure_env "NEXT_PUBLIC_API_URL" "${base_with_port}/api"
-    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "${ws_scheme}://${host}${port:+:${port}}/ws}"
+    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "${ws_scheme}://${host}${port:+:${port}}/ws"
     ensure_env "NEXTAUTH_URL" "$base_with_port"
     ensure_env "FRONTEND_RESET_PASSWORD_URL" "${base_with_port}/reset-password"
     ensure_env "FRONTEND_LOGIN_URL" "$base_with_port"
@@ -699,7 +699,7 @@ main() {
     wait_for_health
     if [ -n "${DO_SSL_SETUP:-}" ] && [ -n "${DOMAIN_FOR_SSL:-}" ] && [ -n "${SSL_EMAIL:-}" ]; then
         log_step "Setting up SSL with Let's Encrypt..."
-        SKIP_CONFIRM=1 ./scripts/setup-ssl.sh "$DOMAIN_FOR_SSL" "$SSL_EMAIL" || true
+        INSTALL_DIR="$INSTALL_DIR" SKIP_CONFIRM=1 ./scripts/setup-ssl.sh "$DOMAIN_FOR_SSL" "$SSL_EMAIL" || true
     fi
     print_summary
 }

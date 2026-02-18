@@ -22,7 +22,8 @@ DOMAIN="${DOMAIN#http://}"
 DOMAIN="${DOMAIN%%/*}"  # strip path if present
 EMAIL="${2:-}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-}"  # Set to non-empty to skip "Continue?" prompt (e.g. when called from install)
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Use INSTALL_DIR when passed from install.sh; otherwise derive from script location
+DEPLOY_DIR="${INSTALL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SSL_DIR="${DEPLOY_DIR}/nginx/ssl"
 CERTBOT_DIR="${DEPLOY_DIR}/certbot"
 
@@ -92,11 +93,31 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Build compose args (match deploy_services / restart_services)
+    local compose_args="-f ${DEPLOY_DIR}/docker-compose.yml"
+    if [ -f "${DEPLOY_DIR}/.env" ]; then
+        set +u
+        set -a
+        # shellcheck source=/dev/null
+        source "${DEPLOY_DIR}/.env" 2>/dev/null || true
+        set +a
+        set -u
+    fi
+    if [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "${DEPLOY_DIR}/docker-compose.observability.yml" ]; then
+        compose_args="$compose_args -f ${DEPLOY_DIR}/docker-compose.observability.yml"
+    fi
+    if [ -f "${DEPLOY_DIR}/docker-compose.ghcr.yml" ]; then
+        compose_args="$compose_args -f ${DEPLOY_DIR}/docker-compose.ghcr.yml"
+    fi
+    
     # Check if worqlo stack is running (retry: containers may take a moment after compose up)
+    # Use project-scoped docker compose ps instead of docker ps for reliability
     local max_attempts=5
     local attempt=1
+    local stack_running=false
     while [ "$attempt" -le "$max_attempts" ]; do
-        if docker ps | grep -q worqlo-nginx; then
+        if (cd "$DEPLOY_DIR" && docker compose $compose_args ps 2>/dev/null) | grep -qE 'nginx|worqlo-nginx'; then
+            stack_running=true
             break
         fi
         if [ "$attempt" -lt "$max_attempts" ]; then
@@ -105,7 +126,7 @@ check_prerequisites() {
         fi
         attempt=$((attempt + 1))
     done
-    if ! docker ps | grep -q worqlo-nginx; then
+    if [ "$stack_running" != "true" ]; then
         log_error "Worqlo stack is not running. Please start it first:"
         echo "  cd ${DEPLOY_DIR}"
         echo "  docker compose up -d"
