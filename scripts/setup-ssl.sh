@@ -93,8 +93,7 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Build compose args (match deploy_services / restart_services)
-    local compose_args="-f ${DEPLOY_DIR}/docker-compose.yml"
+    # Load .env for ENABLE_OBSERVABILITY and HTTP_PORT (needed for health check)
     if [ -f "${DEPLOY_DIR}/.env" ]; then
         set +u
         set -a
@@ -103,20 +102,16 @@ check_prerequisites() {
         set +a
         set -u
     fi
-    if [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "${DEPLOY_DIR}/docker-compose.observability.yml" ]; then
-        compose_args="$compose_args -f ${DEPLOY_DIR}/docker-compose.observability.yml"
-    fi
-    if [ -f "${DEPLOY_DIR}/docker-compose.ghcr.yml" ]; then
-        compose_args="$compose_args -f ${DEPLOY_DIR}/docker-compose.ghcr.yml"
-    fi
-    
+
     # Check if worqlo stack is running (retry: containers may take a moment after compose up)
-    # Use project-scoped docker compose ps instead of docker ps for reliability
+    # Use health endpoint - more reliable than docker compose ps when .env is sourced
+    # (sourcing .env can cause docker compose to fail in subshells on some systems)
     local max_attempts=5
     local attempt=1
     local stack_running=false
+    local health_port="${HTTP_PORT:-80}"
     while [ "$attempt" -le "$max_attempts" ]; do
-        if (cd "$DEPLOY_DIR" && docker compose $compose_args ps 2>/dev/null) | grep -qE 'nginx|worqlo-nginx'; then
+        if curl -sf "http://localhost:${health_port}/health" 2>/dev/null | grep -q '"status"'; then
             stack_running=true
             break
         fi
