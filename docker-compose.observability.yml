@@ -68,10 +68,10 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
-      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
       # Removed GF_INSTALL_PLUGINS - plugins can be installed manually if needed
       # Security settings
-      - GF_SECURITY_COOKIE_SECURE=false  # Set to true with HTTPS
+      - GF_SECURITY_COOKIE_SECURE=true  # Required for HTTPS
       - GF_SECURITY_COOKIE_SAMESITE=lax
       - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
