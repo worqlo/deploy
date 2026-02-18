@@ -291,6 +291,7 @@ _apply_base_url() {
     ensure_env "CORS_ALLOW_ORIGINS" "$cors_origins"
     ensure_env "S3_PUBLIC_ENDPOINT_URL" "http://${host}:9000"
     ensure_env "SALESFORCE_REDIRECT_URI" "${base_with_port}/integrations/salesforce/callback"
+    ensure_env "HUBSPOT_REDIRECT_URI" "${base_with_port}/integrations/hubspot/callback"
 }
 
 # =============================================================================
@@ -423,9 +424,12 @@ prompt_config() {
     if [ -n "${BASE_URL:-}" ]; then
         # Non-interactive: BASE_URL set (e.g. BASE_URL=http://192.168.1.100 curl ... | bash)
         _apply_base_url "$BASE_URL"
+        [[ "$BASE_URL" != https://* ]] && log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS."
     elif [ -n "${DOMAIN:-}" ]; then
         # Non-interactive: DOMAIN set (e.g. DOMAIN=worqlo.company.com)
         _apply_base_url "https://${DOMAIN}"
+        DOMAIN_FOR_SSL="$DOMAIN"
+        ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
     elif [ -t 0 ]; then
         # Auto-detect IP to suggest; lean towards IP when detected (network access is common)
         SUGGESTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || \
@@ -449,6 +453,7 @@ prompt_config() {
         case $ACCESS_CHOICE in
             1)
                 log_info "Using localhost"
+                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using localhost will limit OAuth integrations."
                 ;;
             2)
                 if [ -n "${SUGGESTED_IP:-}" ]; then
@@ -467,10 +472,12 @@ prompt_config() {
                 else
                     _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
                 fi
+                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using an IP address will limit OAuth integrations."
                 ;;
             3)
                 if [ -n "${DOMAIN:-}" ]; then
                     _apply_base_url "https://${DOMAIN}"
+                    DOMAIN_FOR_SSL="$DOMAIN"
                 else
                     read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
                     if [ -z "$DOMAIN_INPUT" ]; then
@@ -478,6 +485,21 @@ prompt_config() {
                         exit 1
                     fi
                     _apply_base_url "https://${DOMAIN_INPUT}"
+                    DOMAIN_FOR_SSL="$DOMAIN_INPUT"
+                fi
+                ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
+                if [ -t 0 ]; then
+                    read -p "Set up HTTPS now? (required for HubSpot/Salesforce OAuth) [Y/n]: " SSL_YN </dev/tty
+                    if [[ "${SSL_YN:-Y}" =~ ^[Yy] ]]; then
+                        DO_SSL_SETUP=1
+                        read -p "Email for Let's Encrypt notifications: " SSL_EMAIL </dev/tty
+                        if [ -z "$SSL_EMAIL" ]; then
+                            log_error "Email is required for Let's Encrypt"
+                            exit 1
+                        fi
+                    else
+                        log_info "To enable HTTPS later: cd $INSTALL_DIR && ./scripts/setup-ssl.sh $DOMAIN_FOR_SSL <email>"
+                    fi
                 fi
                 ;;
             *)
@@ -505,6 +527,9 @@ deploy_services() {
     local compose_args profile_args arch os use_mac_override=false
 
     log_step "Starting services..."
+
+    # Ensure certbot/www exists for ACME challenges (nginx volume mount)
+    mkdir -p ./certbot/www
 
     # Order per doc: base, observability, ghcr (so GHCR overrides images last)
     compose_args="-f docker-compose.yml"
@@ -646,6 +671,10 @@ main() {
     prompt_config
     deploy_services
     wait_for_health
+    if [ -n "${DO_SSL_SETUP:-}" ] && [ -n "${DOMAIN_FOR_SSL:-}" ] && [ -n "${SSL_EMAIL:-}" ]; then
+        log_step "Setting up SSL with Let's Encrypt..."
+        SKIP_CONFIRM=1 ./scripts/setup-ssl.sh "$DOMAIN_FOR_SSL" "$SSL_EMAIL" || true
+    fi
     print_summary
 }
 

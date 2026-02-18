@@ -18,6 +18,7 @@ NC='\033[0m' # No Color
 # Configuration
 DOMAIN="${1:-}"
 EMAIL="${2:-}"
+SKIP_CONFIRM="${SKIP_CONFIRM:-}"  # Set to non-empty to skip "Continue?" prompt (e.g. when called from install)
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSL_DIR="${DEPLOY_DIR}/nginx/ssl"
 CERTBOT_DIR="${DEPLOY_DIR}/certbot"
@@ -67,7 +68,7 @@ ${YELLOW}Prerequisites:${NC}
 ${YELLOW}After setup:${NC}
   • Access your app at: https://<domain>
   • Certificates auto-renew every 60 days
-  • Check renewal status: docker compose exec certbot certbot certificates
+  • Check renewal status: docker run --rm -v certbot/conf:/etc/letsencrypt certbot/certbot certificates
 
 EOF
 }
@@ -154,16 +155,16 @@ obtain_certificate() {
     log_info "Obtaining SSL certificate from Let's Encrypt..."
     log_info "This may take a few minutes..."
     
-    # Run certbot to obtain certificate
+    # Run certbot to obtain certificate (webroot mode - nginx serves ACME challenge)
     docker run --rm \
         --name certbot-temp \
         -v "${CERTBOT_DIR}/conf:/etc/letsencrypt" \
         -v "${CERTBOT_DIR}/www:/var/www/certbot" \
         -v "${SSL_DIR}:/etc/nginx/ssl" \
-        -p 80:80 \
         certbot/certbot \
         certonly \
-        --standalone \
+        --webroot \
+        -w /var/www/certbot \
         --preferred-challenges http \
         --agree-tos \
         --no-eff-email \
@@ -197,22 +198,58 @@ obtain_certificate() {
     fi
 }
 
-# Configure nginx for SSL
+# Update or append a variable in .env
+ensure_env() {
+    local key="$1" value="$2"
+    local env_file="${DEPLOY_DIR}/.env"
+    [ ! -f "$env_file" ] && return
+    if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+        local tmp
+        tmp=$(mktemp)
+        grep -v "^${key}=" "$env_file" > "$tmp"
+        echo "${key}=${value}" >> "$tmp"
+        mv "$tmp" "$env_file"
+    else
+        printf '\n%s=%s\n' "$key" "$value" >> "$env_file"
+    fi
+}
+
+# Configure nginx for SSL and persist NGINX_CONF in .env
 configure_nginx() {
     local domain=$1
     
     log_info "Configuring nginx for HTTPS..."
     
-    # Update server_name in nginx-ssl.conf
-    sed -i.bak "s/server_name _;/server_name ${domain};/" "${DEPLOY_DIR}/nginx/nginx-ssl.conf"
+    # Determine which nginx config to use based on observability
+    local nginx_conf
+    if [ -f "${DEPLOY_DIR}/.env" ]; then
+        set +u
+        set -a
+        # shellcheck source=/dev/null
+        source "${DEPLOY_DIR}/.env" 2>/dev/null || true
+        set +a
+        set +u
+    fi
+    if [[ "${ENABLE_OBSERVABILITY:-}" =~ ^[Yy] ]] && [ -f "${DEPLOY_DIR}/nginx/nginx-with-grafana-ssl.conf" ]; then
+        nginx_conf="./nginx/nginx-with-grafana-ssl.conf"
+    else
+        nginx_conf="./nginx/nginx-ssl.conf"
+    fi
     
-    # Update docker-compose to use SSL config
-    log_info "Updating docker-compose.yml to use SSL configuration..."
+    # Update server_name in the selected config
+    sed -i.bak "s/server_name _;/server_name ${domain};/" "${DEPLOY_DIR}/${nginx_conf#./}"
     
-    cat > "${DEPLOY_DIR}/.env.ssl" << EOF
-# SSL Configuration
-NGINX_CONF=./nginx/nginx-ssl.conf
-EOF
+    # Persist NGINX_CONF in .env (docker-compose loads .env)
+    ensure_env "NGINX_CONF" "$nginx_conf"
+    
+    # Update base URL env vars for HTTPS
+    ensure_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
+    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "wss://${domain}/ws"
+    ensure_env "NEXTAUTH_URL" "https://${domain}"
+    ensure_env "FRONTEND_RESET_PASSWORD_URL" "https://${domain}/reset-password"
+    ensure_env "FRONTEND_LOGIN_URL" "https://${domain}"
+    ensure_env "SALESFORCE_REDIRECT_URI" "https://${domain}/integrations/salesforce/callback"
+    ensure_env "HUBSPOT_REDIRECT_URI" "https://${domain}/integrations/hubspot/callback"
     
     log_success "Nginx configured for HTTPS"
 }
@@ -221,22 +258,31 @@ EOF
 setup_renewal() {
     log_info "Setting up automatic certificate renewal..."
     
-    # Create renewal script
-    cat > "${DEPLOY_DIR}/scripts/renew-cert.sh" << 'EOF'
+    # Create renewal script (DOMAIN interpolated)
+    local domain="$1"
+    cat > "${DEPLOY_DIR}/scripts/renew-cert.sh" << EOF
 #!/bin/bash
 # Auto-renewal script for Let's Encrypt certificates
 # Run this via cron: 0 3 * * * /path/to/renew-cert.sh
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CERTBOT_DIR="${DEPLOY_DIR}/certbot"
+DEPLOY_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+CERTBOT_DIR="\${DEPLOY_DIR}/certbot"
+SSL_DIR="\${DEPLOY_DIR}/nginx/ssl"
 
-docker run --rm \
-    -v "${CERTBOT_DIR}/conf:/etc/letsencrypt" \
-    -v "${CERTBOT_DIR}/www:/var/www/certbot" \
+docker run --rm \\
+    -v "\${CERTBOT_DIR}/conf:/etc/letsencrypt" \\
+    -v "\${CERTBOT_DIR}/www:/var/www/certbot" \\
     certbot/certbot renew --quiet
 
-# Reload nginx if certificates were renewed
-if [ $? -eq 0 ]; then
+# Copy renewed certs to nginx and reload
+if [ \$? -eq 0 ]; then
+    docker run --rm \\
+        -v "\${CERTBOT_DIR}/conf:/etc/letsencrypt" \\
+        -v "\${SSL_DIR}:/ssl" \\
+        alpine:latest \\
+        sh -c "cp /etc/letsencrypt/live/${domain}/fullchain.pem /ssl/ && \\
+               cp /etc/letsencrypt/live/${domain}/privkey.pem /ssl/ && \\
+               cp /etc/letsencrypt/live/${domain}/chain.pem /ssl/"
     docker exec worqlo-nginx nginx -s reload
 fi
 EOF
@@ -249,24 +295,35 @@ EOF
     echo "  0 3 * * * ${DEPLOY_DIR}/scripts/renew-cert.sh"
 }
 
-# Restart services
+# Restart services with full down/up so NGINX_CONF from .env is picked up
 restart_services() {
     log_info "Restarting services with SSL configuration..."
     
-    # Update nginx volume mount in docker-compose
     cd "${DEPLOY_DIR}"
     
-    # Restart nginx with new config
-    docker cp "${DEPLOY_DIR}/nginx/nginx-ssl.conf" worqlo-nginx:/etc/nginx/nginx.conf
-    docker exec worqlo-nginx nginx -t
-    
-    if [ $? -eq 0 ]; then
-        docker exec worqlo-nginx nginx -s reload
-        log_success "Nginx reloaded with SSL configuration"
-    else
-        log_error "Nginx configuration test failed"
-        exit 1
+    # Load .env for compose file selection
+    if [ -f .env ]; then
+        set +u
+        set -a
+        # shellcheck source=/dev/null
+        source .env 2>/dev/null || true
+        set +a
+        set -u
     fi
+    
+    # Build compose args (match deploy_services logic)
+    local compose_args="-f docker-compose.yml"
+    if [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "docker-compose.observability.yml" ]; then
+        compose_args="$compose_args -f docker-compose.observability.yml"
+    fi
+    if [ -f "docker-compose.ghcr.yml" ]; then
+        compose_args="$compose_args -f docker-compose.ghcr.yml"
+    fi
+    
+    docker compose $compose_args down
+    docker compose $compose_args up -d
+    
+    log_success "Stack restarted with SSL configuration"
 }
 
 # Main
@@ -293,12 +350,14 @@ main() {
     echo "Email:  ${EMAIL}"
     echo ""
     
-    # Confirm
-    read -p "Continue with SSL setup? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Setup cancelled"
-        exit 0
+    # Confirm (skip when SKIP_CONFIRM is set, e.g. from install.sh)
+    if [ -z "$SKIP_CONFIRM" ]; then
+        read -p "Continue with SSL setup? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Setup cancelled"
+            exit 0
+        fi
     fi
     
     # Run setup steps
@@ -307,7 +366,7 @@ main() {
     setup_directories
     obtain_certificate "$DOMAIN" "$EMAIL"
     configure_nginx "$DOMAIN"
-    setup_renewal
+    setup_renewal "$DOMAIN"
     restart_services
     
     echo ""
@@ -322,14 +381,8 @@ main() {
     echo "• Auto-renewal: ${DEPLOY_DIR}/scripts/renew-cert.sh"
     echo ""
     echo "Next steps:"
-    echo "  1. Update your .env file:"
-    echo "     NEXT_PUBLIC_API_URL=https://${DOMAIN}/api"
-    echo "     NEXT_PUBLIC_WEBSOCKET_URL=wss://${DOMAIN}/ws"
-    echo "     NEXTAUTH_URL=https://${DOMAIN}"
-    echo "  2. Restart the stack:"
-    echo "     cd ${DEPLOY_DIR} && docker compose restart"
-    echo "  3. Test your site: https://${DOMAIN}"
-    echo "  4. Set up auto-renewal cron job (see above)"
+    echo "  1. Test your site: https://${DOMAIN}"
+    echo "  2. Set up auto-renewal cron job (see above)"
     echo ""
 }
 
