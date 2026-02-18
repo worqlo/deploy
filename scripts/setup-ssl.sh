@@ -277,6 +277,7 @@ configure_nginx() {
     ensure_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
     ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "wss://${domain}/ws"
     ensure_env "NEXTAUTH_URL" "https://${domain}"
+    ensure_env "S3_PUBLIC_ENDPOINT_URL" "https://${domain}/s3"
     ensure_env "FRONTEND_RESET_PASSWORD_URL" "https://${domain}/reset-password"
     ensure_env "FRONTEND_LOGIN_URL" "https://${domain}"
     ensure_env "SALESFORCE_REDIRECT_URI" "https://${domain}/integrations/salesforce/callback"
