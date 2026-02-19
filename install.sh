@@ -612,8 +612,6 @@ deploy_services() {
 # Step 8: Health check
 # =============================================================================
 wait_for_health() {
-    log_step "Waiting for services..."
-
     if [ -f .env ]; then
         set +u
         set -a
@@ -624,8 +622,10 @@ wait_for_health() {
     fi
 
     HEALTH_URL="http://localhost:${HTTP_PORT:-80}/health"
+    log_step "Waiting for services (up to 2 min): $HEALTH_URL"
+
     for i in $(seq 1 60); do
-        if curl -sf "$HEALTH_URL" 2>/dev/null | grep -q '"status"'; then
+        if curl -sf --connect-timeout 5 "$HEALTH_URL" 2>/dev/null | grep -q '"status"'; then
             if [ -n "${HTTP_PORT:-}" ] && [ "${HTTP_PORT:-}" != "80" ]; then
                 log_success "Ready at http://localhost:${HTTP_PORT}"
             else
@@ -634,10 +634,11 @@ wait_for_health() {
             return 0
         fi
         sleep 2
-        echo -n "."
+        printf "."
+        [ "$(( i % 15 ))" -eq 0 ] && echo " ${i}/60"
     done
     echo ""
-    log_warning "Health check timed out (services may still be starting)"
+    log_warning "Health check timed out (services may still be starting). Check: docker compose -f docker-compose.yml -f docker-compose.observability.yml -f docker-compose.ghcr.yml ps"
 }
 
 # =============================================================================

@@ -68,8 +68,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3001}
-      # v10+ redirect loop when true behind reverse proxy; nginx strips /grafana prefix instead
-      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      # Must be true so redirects go to /grafana/login not /login; nginx passes full path (no strip)
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
       # Removed GF_INSTALL_PLUGINS - plugins can be installed manually if needed
       # Security settings
       - GF_SECURITY_COOKIE_SECURE=${GRAFANA_COOKIE_SECURE:-false}
