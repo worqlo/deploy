@@ -207,9 +207,6 @@ services:
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-worqlo-self-hosted}
     volumes:
       - uploads-data:/app/uploads
-      - ../app/config.py:/app/app/config.py:ro
-      - ../app/domain/models.py:/app/app/domain/models.py:ro
-      - ../app/services/knowledge_base.py:/app/app/services/knowledge_base.py:ro
     networks:
       - backend-network
       - db-network
@@ -301,9 +298,6 @@ services:
       - CELERY_TASK_DEFAULT_QUEUE=default
     volumes:
       - uploads-data:/app/uploads
-      - ../app/config.py:/app/app/config.py:ro
-      - ../app/domain/models.py:/app/app/domain/models.py:ro
-      - ../app/services/knowledge_base.py:/app/app/services/knowledge_base.py:ro
     networks:
       - backend-network
       - db-network
