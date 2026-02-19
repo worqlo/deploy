@@ -560,6 +560,8 @@ prompt_config() {
             ENABLE_OBSERVABILITY=Y
         fi
     fi
+    # Persist so setup-ssl.sh (and future runs) select nginx-with-grafana-ssl.conf when observability is on
+    ensure_env "ENABLE_OBSERVABILITY" "$ENABLE_OBSERVABILITY"
 }
 
 # =============================================================================
