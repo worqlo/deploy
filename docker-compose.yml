@@ -149,7 +149,7 @@ services:
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_HOURS=${JWT_ACCESS_TOKEN_EXPIRE_HOURS:-24}
       # LLM Configuration
-      - LLM_PROVIDER=${LLM_PROVIDER:-sglang}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - GROK_API_KEY=${GROK_API_KEY:-}
@@ -167,7 +167,11 @@ services:
       - SGLANG_WARMUP_ENABLED=${SGLANG_WARMUP_ENABLED:-true}
       # Harmony/tiktoken vocab cache (SGLang provider; writable in image)
       - TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_RS_CACHE_DIR:-/app/.cache/tiktoken_rs}
-      # Embedding (Knowledge Base) - from env_file only; env block would override with wrong value
+      # Embedding (Knowledge Base)
+      - KB_EMBEDDING_PROVIDER=${KB_EMBEDDING_PROVIDER:-openai}
+      - KB_EMBEDDING_BASE_URL=${KB_EMBEDDING_BASE_URL:-}
+      - KB_EMBEDDING_MODEL=${KB_EMBEDDING_MODEL:-text-embedding-3-small}
+      - KB_EMBEDDING_DIMENSIONS=${KB_EMBEDDING_DIMENSIONS:-1536}
       # Storage (MinIO/S3)
       - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-worqlo}
@@ -270,7 +274,7 @@ services:
       # JWT
       - JWT_WS_SECRET=${JWT_WS_SECRET}
       # LLM
-      - LLM_PROVIDER=${LLM_PROVIDER:-sglang}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GROK_API_KEY=${GROK_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
@@ -283,7 +287,11 @@ services:
       - SGLANG_TOP_P=${SGLANG_TOP_P:-}
       - SGLANG_MAX_OUTPUT_TOKENS=${SGLANG_MAX_OUTPUT_TOKENS:-}
       - TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_RS_CACHE_DIR:-/app/.cache/tiktoken_rs}
-      # Embedding (Knowledge Base) - from env_file only so deploy/.env always wins
+      # Embedding (Knowledge Base)
+      - KB_EMBEDDING_PROVIDER=${KB_EMBEDDING_PROVIDER:-openai}
+      - KB_EMBEDDING_BASE_URL=${KB_EMBEDDING_BASE_URL:-}
+      - KB_EMBEDDING_MODEL=${KB_EMBEDDING_MODEL:-text-embedding-3-small}
+      - KB_EMBEDDING_DIMENSIONS=${KB_EMBEDDING_DIMENSIONS:-1536}
       # Storage
       - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-worqlo}

@@ -5,7 +5,7 @@
 # One-line install using pre-built Docker images from GitHub Container Registry.
 # Usage: curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 #
-# Non-interactive: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash
+# Non-interactive: OPENAI_API_KEY=sk-... DOMAIN=app.example.com curl -fsSL ... | bash
 #
 # Best practice: Review script before running:
 #   curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh -o install.sh && less install.sh && bash install.sh
@@ -17,7 +17,6 @@ set -euo pipefail
 cleanup() {
     local exit_code=$?
     [[ -n "${PULL_LOG_FILE:-}" ]] && rm -f "$PULL_LOG_FILE"
-    [[ -n "${ENV_TMP_FILE:-}" ]] && rm -f "$ENV_TMP_FILE"
     [[ -n "${CLONE_ERR:-}" ]] && rm -f "$CLONE_ERR"
     exit "$exit_code"
 }
@@ -243,21 +242,6 @@ _strip_scheme_and_path() {
     echo "${d%%/*}"
 }
 
-# Update or append a variable in .env (avoids duplicates on re-run; uses mktemp for security)
-ensure_env() {
-    local key="$1" value="$2"
-    if grep -q "^${key}=" .env 2>/dev/null; then
-        ENV_TMP_FILE=$(mktemp)
-        grep -v "^${key}=" .env > "$ENV_TMP_FILE"
-        echo "${key}=${value}" >> "$ENV_TMP_FILE"
-        mv "$ENV_TMP_FILE" .env
-        ENV_TMP_FILE=""
-    else
-        # Use printf to ensure newline before append (prevents concatenation when .env lacks trailing newline)
-        printf '\n%s=%s\n' "$key" "$value" >> .env
-    fi
-}
-
 # Apply BASE_URL to all URL-related env vars (for IP or domain access)
 _apply_base_url() {
     local base="$1"
@@ -294,13 +278,25 @@ _apply_base_url() {
     ensure_env "NEXTAUTH_URL" "$base_with_port"
     ensure_env "FRONTEND_RESET_PASSWORD_URL" "${base_with_port}/reset-password"
     ensure_env "FRONTEND_LOGIN_URL" "$base_with_port"
-    # CORS: base URL plus common variants (port 80, 3000)
     local cors_origins="${base_with_port}"
-    [ -n "$host" ] && cors_origins="${base_with_port},${scheme}://${host}:80,${scheme}://${host}:3000"
+    if [ "$scheme" = "http" ] && [ -n "$host" ]; then
+        cors_origins="${base_with_port},${scheme}://${host}:80,${scheme}://${host}:3000"
+    fi
     ensure_env "CORS_ALLOW_ORIGINS" "$cors_origins"
-    ensure_env "S3_PUBLIC_ENDPOINT_URL" "http://${host}:9000"
+    if [ "$scheme" = "https" ]; then
+        ensure_env "S3_PUBLIC_ENDPOINT_URL" "https://${host}/s3"
+    else
+        ensure_env "S3_PUBLIC_ENDPOINT_URL" "http://${host}:9000"
+    fi
     ensure_env "SALESFORCE_REDIRECT_URI" "${base_with_port}/integrations/salesforce/callback"
     ensure_env "HUBSPOT_REDIRECT_URI" "${base_with_port}/integrations/hubspot/callback"
+    ensure_env "GRAFANA_ROOT_URL" "${base_with_port}/grafana/"
+    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${host}"
+    if [ "$scheme" = "https" ]; then
+        ensure_env "GRAFANA_COOKIE_SECURE" "true"
+    else
+        ensure_env "GRAFANA_COOKIE_SECURE" "false"
+    fi
 }
 
 # =============================================================================
@@ -352,8 +348,8 @@ prompt_config() {
     if [ -t 0 ]; then
         echo ""
         echo "Select LLM provider:"
-        echo "  [1] SGLang (self-hosted, requires URL + model)"
-        echo "  [2] OpenAI (requires API key)"
+        echo "  [1] OpenAI (requires API key)"
+        echo "  [2] SGLang (self-hosted, requires URL + model)"
         echo "  [3] Grok/xAI (requires API key)"
         echo "  [4] Ollama (local, no key needed)"
         read -p "Choice [1]: " LLM_CHOICE </dev/tty
@@ -361,6 +357,16 @@ prompt_config() {
 
         case $LLM_CHOICE in
             1)
+                USE_OLLAMA_PROFILE=""
+                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
+                read -p "OpenAI API key: " OPENAI_API_KEY </dev/tty
+                if [ -z "$OPENAI_API_KEY" ]; then
+                    log_error "OpenAI API key is required"
+                    exit 1
+                fi
+                ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
+                ;;
+            2)
                 USE_OLLAMA_PROFILE=""
                 sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
                 read -p "SGLang base URL (e.g. http://192.168.0.2:30000): " SGLANG_BASE_URL </dev/tty
@@ -372,16 +378,33 @@ prompt_config() {
                 fi
                 ensure_env "SGLANG_BASE_URL" "$SGLANG_BASE_URL"
                 ensure_env "SGLANG_MODEL" "$SGLANG_MODEL"
-                ;;
-            2)
-                USE_OLLAMA_PROFILE=""
-                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
-                read -p "OpenAI API key: " OPENAI_API_KEY </dev/tty
-                if [ -z "$OPENAI_API_KEY" ]; then
-                    log_error "OpenAI API key is required"
-                    exit 1
+                # Embedding config for SGLang
+                echo ""
+                echo "  Embedding server (for Knowledge Base vector search):"
+                echo "    If you have a separate SGLang embedding server, enter its URL."
+                echo "    Otherwise, press Enter to use OpenAI embeddings (requires OPENAI_API_KEY)."
+                read -p "  Embedding server URL (e.g. http://192.168.0.2:30001/v1) [skip]: " KB_EMBED_URL_INPUT </dev/tty
+                if [ -n "$KB_EMBED_URL_INPUT" ]; then
+                    ensure_env "KB_EMBEDDING_PROVIDER" "sglang"
+                    ensure_env "KB_EMBEDDING_BASE_URL" "$KB_EMBED_URL_INPUT"
+                    read -p "  Embedding model [Qwen/Qwen3-Embedding-4B]: " KB_EMBED_MODEL_INPUT </dev/tty
+                    ensure_env "KB_EMBEDDING_MODEL" "${KB_EMBED_MODEL_INPUT:-Qwen/Qwen3-Embedding-4B}"
+                    read -p "  Embedding dimensions [2560]: " KB_EMBED_DIM_INPUT </dev/tty
+                    KB_EMBED_DIM_INPUT="${KB_EMBED_DIM_INPUT:-2560}"
+                    if ! [[ "$KB_EMBED_DIM_INPUT" =~ ^[0-9]+$ ]]; then
+                        log_error "Embedding dimensions must be a positive integer (got: $KB_EMBED_DIM_INPUT)"
+                        exit 1
+                    fi
+                    ensure_env "KB_EMBEDDING_DIMENSIONS" "$KB_EMBED_DIM_INPUT"
+                else
+                    ensure_env "KB_EMBEDDING_PROVIDER" "openai"
+                    read -p "  OpenAI API key (for embeddings): " OPENAI_API_KEY_FOR_EMBED </dev/tty
+                    if [ -n "$OPENAI_API_KEY_FOR_EMBED" ]; then
+                        ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY_FOR_EMBED"
+                    else
+                        log_warning "No OpenAI API key provided — set OPENAI_API_KEY in .env before using Knowledge Base"
+                    fi
                 fi
-                ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
                 ;;
             3)
                 USE_OLLAMA_PROFILE=""
@@ -406,18 +429,25 @@ prompt_config() {
     else
         # Non-interactive: require env vars
         if [ -z "${SGLANG_BASE_URL:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${GROK_API_KEY:-}" ] && [ "${LLM_PROVIDER:-}" != "ollama" ]; then
-            log_error "No LLM config set. For non-interactive install, set SGLANG_BASE_URL+SGLANG_MODEL (default), OPENAI_API_KEY, or GROK_API_KEY."
-            log_error "Example: SGLANG_BASE_URL=http://host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL ... | bash"
+            log_error "No LLM config set. For non-interactive install, set OPENAI_API_KEY (default), SGLANG_BASE_URL+SGLANG_MODEL, or GROK_API_KEY."
+            log_error "Example: OPENAI_API_KEY=sk-... curl -fsSL ... | bash"
             exit 1
         fi
         USE_OLLAMA_PROFILE=""
-        if [ -n "${SGLANG_BASE_URL:-}" ]; then
+        if [ -n "${OPENAI_API_KEY:-}" ]; then
+            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
+            ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
+        elif [ -n "${SGLANG_BASE_URL:-}" ]; then
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
             ensure_env "SGLANG_BASE_URL" "$SGLANG_BASE_URL"
             ensure_env "SGLANG_MODEL" "${SGLANG_MODEL:-openai/gpt-oss-120b}"
-        elif [ -n "${OPENAI_API_KEY:-}" ]; then
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
-            ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
+            # Non-interactive embedding config: KB_EMBEDDING_BASE_URL=http://host:30001/v1
+            if [ -n "${KB_EMBEDDING_BASE_URL:-}" ]; then
+                ensure_env "KB_EMBEDDING_PROVIDER" "sglang"
+                ensure_env "KB_EMBEDDING_BASE_URL" "$KB_EMBEDDING_BASE_URL"
+                ensure_env "KB_EMBEDDING_MODEL" "${KB_EMBEDDING_MODEL:-Qwen/Qwen3-Embedding-4B}"
+                ensure_env "KB_EMBEDDING_DIMENSIONS" "${KB_EMBEDDING_DIMENSIONS:-2560}"
+            fi
         elif [ -n "${GROK_API_KEY:-}" ]; then
             sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env
             ensure_env "GROK_API_KEY" "$GROK_API_KEY"
@@ -441,34 +471,46 @@ prompt_config() {
         _apply_base_url "https://${DOMAIN_FOR_SSL}"
         ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
     elif [ -t 0 ]; then
-        # Auto-detect IP to suggest; lean towards IP when detected (network access is common)
         SUGGESTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || \
             ip route get 1 2>/dev/null | awk '{print $7; exit}' || \
             ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
-        if [ -n "$SUGGESTED_IP" ]; then
-            DEFAULT_ACCESS=2
-            DEFAULT_PROMPT="[2]"
-        else
-            DEFAULT_ACCESS=1
-            DEFAULT_PROMPT="[1]"
-        fi
         echo ""
         echo "How will users access Worqlo?"
-        echo "  [1] localhost (single machine, dev)"
+        echo "  [1] Domain (recommended, e.g. worqlo.company.com)"
         echo "  [2] IP address (network access, e.g. 192.168.1.100)"
-        echo "  [3] Domain (e.g. worqlo.company.com)"
-        read -p "Choice $DEFAULT_PROMPT: " ACCESS_CHOICE </dev/tty
-        ACCESS_CHOICE=${ACCESS_CHOICE:-$DEFAULT_ACCESS}
+        echo "  [3] localhost (single machine, dev only)"
+        read -p "Choice [1]: " ACCESS_CHOICE </dev/tty
+        ACCESS_CHOICE=${ACCESS_CHOICE:-1}
 
         case $ACCESS_CHOICE in
             1)
-                log_info "Using localhost"
-                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using localhost will limit OAuth integrations."
-                HTTP_PORT_VAL="${HTTP_PORT:-80}"
-                if [ "$HTTP_PORT_VAL" = "80" ]; then
-                    _apply_base_url "http://localhost"
+                if [ -n "${DOMAIN:-}" ]; then
+                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN")"
+                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
                 else
-                    _apply_base_url "http://localhost:${HTTP_PORT_VAL}"
+                    read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
+                    if [ -z "$DOMAIN_INPUT" ]; then
+                        log_error "Domain is required."
+                        exit 1
+                    fi
+                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN_INPUT")"
+                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
+                fi
+                ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
+                log_success "URLs configured for https://${DOMAIN_FOR_SSL}"
+                grep -q "^NEXTAUTH_URL=.*${DOMAIN_FOR_SSL}" .env 2>/dev/null || log_warning "NEXTAUTH_URL may not have updated. Run docker compose from: $(pwd)"
+                if [ -t 0 ]; then
+                    read -p "Set up HTTPS now? (required for OAuth integrations) [Y/n]: " SSL_YN </dev/tty
+                    if [[ "${SSL_YN:-Y}" =~ ^[Yy] ]]; then
+                        DO_SSL_SETUP=1
+                        read -p "Email for Let's Encrypt notifications: " SSL_EMAIL </dev/tty
+                        if [ -z "$SSL_EMAIL" ]; then
+                            log_error "Email is required for Let's Encrypt"
+                            exit 1
+                        fi
+                    else
+                        log_info "To enable HTTPS later: cd $INSTALL_DIR && ./scripts/setup-ssl.sh $DOMAIN_FOR_SSL <email>"
+                    fi
                 fi
                 ;;
             2)
@@ -489,38 +531,17 @@ prompt_config() {
                 else
                     _apply_base_url "http://${IP_ADDR}:${HTTP_PORT_VAL}"
                 fi
-                log_success "URLs (NEXTAUTH_URL, CORS, OAuth callbacks) updated in .env for http://${IP_ADDR}${HTTP_PORT_VAL:+:${HTTP_PORT_VAL}}"
-                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using an IP address will limit OAuth integrations."
+                log_success "URLs configured for http://${IP_ADDR}${HTTP_PORT_VAL:+:${HTTP_PORT_VAL}}"
+                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Using an IP will limit OAuth integrations."
                 ;;
             3)
-                if [ -n "${DOMAIN:-}" ]; then
-                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN")"
-                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
+                log_info "Using localhost (dev mode)"
+                log_warning "OAuth (HubSpot/Salesforce) requires a domain with HTTPS. Localhost will limit OAuth integrations."
+                HTTP_PORT_VAL="${HTTP_PORT:-80}"
+                if [ "$HTTP_PORT_VAL" = "80" ]; then
+                    _apply_base_url "http://localhost"
                 else
-                    read -p "Domain (e.g. worqlo.company.com): " DOMAIN_INPUT </dev/tty
-                    if [ -z "$DOMAIN_INPUT" ]; then
-                        log_error "Domain is required."
-                        exit 1
-                    fi
-                    DOMAIN_FOR_SSL="$(_strip_scheme_and_path "$DOMAIN_INPUT")"
-                    _apply_base_url "https://${DOMAIN_FOR_SSL}"
-                fi
-                ensure_env "DOMAIN" "$DOMAIN_FOR_SSL"
-                log_success "URLs (NEXTAUTH_URL, CORS, OAuth callbacks) updated in .env for https://${DOMAIN_FOR_SSL}"
-                # Verify: if sign-out redirects to localhost, ensure you run 'docker compose' from this directory
-                grep -q "^NEXTAUTH_URL=.*${DOMAIN_FOR_SSL}" .env 2>/dev/null || log_warning "NEXTAUTH_URL may not have updated. Run docker compose from: $(pwd)"
-                if [ -t 0 ]; then
-                    read -p "Set up HTTPS now? (required for HubSpot/Salesforce OAuth) [Y/n]: " SSL_YN </dev/tty
-                    if [[ "${SSL_YN:-Y}" =~ ^[Yy] ]]; then
-                        DO_SSL_SETUP=1
-                        read -p "Email for Let's Encrypt notifications: " SSL_EMAIL </dev/tty
-                        if [ -z "$SSL_EMAIL" ]; then
-                            log_error "Email is required for Let's Encrypt"
-                            exit 1
-                        fi
-                    else
-                        log_info "To enable HTTPS later: cd $INSTALL_DIR && ./scripts/setup-ssl.sh $DOMAIN_FOR_SSL <email>"
-                    fi
+                    _apply_base_url "http://localhost:${HTTP_PORT_VAL}"
                 fi
                 ;;
             *)
@@ -673,9 +694,9 @@ show_help() {
     echo "  --help    Show this help"
     echo ""
     echo "Environment variables (non-interactive):"
-    echo "  GHCR_OWNER, IMAGE_TAG, BASE_URL, DOMAIN, SGLANG_BASE_URL, SGLANG_MODEL,"
-    echo "  OPENAI_API_KEY, GROK_API_KEY, ENABLE_OBSERVABILITY, INSTALL_DIR, DEPLOY_REPO,"
-    echo "  DEPLOY_BRANCH, DEPLOY_TARBALL_URL, DEPLOY_CDN_URL"
+    echo "  GHCR_OWNER, IMAGE_TAG, DOMAIN, BASE_URL, OPENAI_API_KEY, SGLANG_BASE_URL,"
+    echo "  SGLANG_MODEL, KB_EMBEDDING_BASE_URL, GROK_API_KEY, ENABLE_OBSERVABILITY,"
+    echo "  INSTALL_DIR, DEPLOY_REPO, DEPLOY_BRANCH, DEPLOY_TARBALL_URL, DEPLOY_CDN_URL"
     echo ""
     echo "Best practice: curl -fsSL URL -o install.sh && less install.sh && bash install.sh"
 }
@@ -693,6 +714,8 @@ main() {
     check_prerequisites
     fetch_deploy_bundle
     cd "$INSTALL_DIR"
+    # shellcheck source=scripts/lib.sh
+    source scripts/lib.sh
     generate_config
     prompt_config
     deploy_services

@@ -85,7 +85,7 @@ S3_PUBLIC_ENDPOINT_URL=http://localhost:9000
 # LLM Provider Configuration
 # -----------------------------------------------------------------------------
 # Options: openai, ollama, grok, sglang
-LLM_PROVIDER=sglang
+LLM_PROVIDER=openai
 
 # OpenAI (if LLM_PROVIDER=openai)
 # Get your API key from: https://platform.openai.com/api-keys
@@ -106,6 +106,25 @@ OLLAMA_MODEL=llama3.1:8b
 SGLANG_BASE_URL=http://your-sglang-host:30000
 SGLANG_MODEL=openai/gpt-oss-120b
 # SGLANG_REASONING_EFFORT=medium
+
+# -----------------------------------------------------------------------------
+# Embedding Configuration (Knowledge Base)
+# -----------------------------------------------------------------------------
+# Provider: openai (uses OPENAI_API_KEY) or sglang (uses KB_EMBEDDING_BASE_URL)
+# install.sh sets this based on your LLM provider choice
+KB_EMBEDDING_PROVIDER=openai
+
+# SGLang embedding server (only when KB_EMBEDDING_PROVIDER=sglang)
+# Base URL including /v1. Example: http://192.168.0.2:30001/v1
+# KB_EMBEDDING_BASE_URL=http://your-embedding-host:30001/v1
+
+# Model name: OpenAI model name or HuggingFace format for SGLang
+KB_EMBEDDING_MODEL=text-embedding-3-small
+
+# Dimensions (must match model output and document_chunks.embedding column)
+# text-embedding-3-small (OpenAI): 1536
+# Qwen3-Embedding-4B (SGLang): 2560
+KB_EMBEDDING_DIMENSIONS=1536
 
 # -----------------------------------------------------------------------------
 # URLs (set by install.sh based on your choice: localhost / IP / domain)
@@ -189,7 +208,10 @@ S3_REGION=us-east-1
 # Grafana admin credentials - CHANGE THESE IN PRODUCTION!
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=$(generate_password 16)
+# Grafana at /grafana: overridden by install.sh and setup-ssl.sh with the correct domain
 GRAFANA_ROOT_URL=http://localhost:3001
+# Set to true only when HTTPS is configured (install.sh / setup-ssl.sh handle this)
+GRAFANA_COOKIE_SECURE=false
 
 EOF
 

@@ -229,21 +229,10 @@ obtain_certificate() {
     fi
 }
 
-# Update or append a variable in .env
-ensure_env() {
-    local key="$1" value="$2"
-    local env_file="${DEPLOY_DIR}/.env"
-    [ ! -f "$env_file" ] && return
-    if grep -q "^${key}=" "$env_file" 2>/dev/null; then
-        local tmp
-        tmp=$(mktemp)
-        grep -v "^${key}=" "$env_file" > "$tmp"
-        echo "${key}=${value}" >> "$tmp"
-        mv "$tmp" "$env_file"
-    else
-        printf '\n%s=%s\n' "$key" "$value" >> "$env_file"
-    fi
-}
+# Shared utilities (ensure_env, etc.)
+ENV_FILE="${DEPLOY_DIR}/.env"
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Configure nginx for SSL and persist NGINX_CONF in .env
 configure_nginx() {
@@ -259,7 +248,7 @@ configure_nginx() {
         # shellcheck source=/dev/null
         source "${DEPLOY_DIR}/.env" 2>/dev/null || true
         set +a
-        set +u
+        set -u
     fi
     if [[ "${ENABLE_OBSERVABILITY:-}" =~ ^[Yy] ]] && [ -f "${DEPLOY_DIR}/nginx/nginx-with-grafana-ssl.conf" ]; then
         nginx_conf="./nginx/nginx-with-grafana-ssl.conf"
@@ -282,6 +271,9 @@ configure_nginx() {
     ensure_env "FRONTEND_LOGIN_URL" "https://${domain}"
     ensure_env "SALESFORCE_REDIRECT_URI" "https://${domain}/integrations/salesforce/callback"
     ensure_env "HUBSPOT_REDIRECT_URI" "https://${domain}/integrations/hubspot/callback"
+    ensure_env "GRAFANA_ROOT_URL" "https://${domain}/grafana/"
+    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${domain}"
+    ensure_env "GRAFANA_COOKIE_SECURE" "true"
     
     log_success "Nginx configured for HTTPS"
 }
