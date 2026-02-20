@@ -11,6 +11,9 @@ nginx/ssl/*
 *.crt
 *.key
 
+# Generated at deploy time
+VERSION
+
 # Local/cache
 .pre_update_images.json
 sbom-backend.json

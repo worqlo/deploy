@@ -14,16 +14,12 @@
 
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
 # Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="${1:-${DEPLOY_DIR}/backups/worqlo_backup_${TIMESTAMP}}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"  # Default: keep 7 days of backups
 
@@ -31,23 +27,6 @@ RETENTION_DAYS="${RETENTION_DAYS:-7}"  # Default: keep 7 days of backups
 POSTGRES_CONTAINER="worqlo-postgres"
 REDIS_CONTAINER="worqlo-redis"
 MINIO_CONTAINER="worqlo-minio"
-
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
 # Check if Docker is running
 check_docker() {

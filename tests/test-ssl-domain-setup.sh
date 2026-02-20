@@ -89,15 +89,10 @@ test_docker_compose() {
     fi
 
     if [ -f "$obs" ]; then
-        if ! grep -q 'NGINX_CONF:-./nginx/nginx-with-grafana.conf' "$obs" 2>/dev/null; then
-            fail "docker-compose.observability.yml: NGINX_CONF not found"
+        if grep -q 'depends_on' "$obs" 2>/dev/null && grep -q 'grafana' "$obs" 2>/dev/null; then
+            pass "docker-compose.observability.yml: nginx depends_on grafana"
         else
-            pass "docker-compose.observability.yml: NGINX_CONF present"
-        fi
-        if ! grep -q 'certbot/www:/var/www/certbot' "$obs" 2>/dev/null; then
-            fail "docker-compose.observability.yml: certbot volume not found"
-        else
-            pass "docker-compose.observability.yml: certbot volume present"
+            fail "docker-compose.observability.yml: nginx should depend on grafana"
         fi
     fi
 }
@@ -111,9 +106,8 @@ test_nginx_configs() {
     local required=(
         "nginx/nginx.conf"
         "nginx/nginx-ssl.conf"
-        "nginx/nginx-with-grafana.conf"
-        "nginx/nginx-with-grafana-ssl.conf"
         "nginx/includes/app-routes.conf"
+        "nginx/includes/grafana-proxy.conf"
     )
     for f in "${required[@]}"; do
         if [ -f "${DEPLOY_DIR}/${f}" ]; then
@@ -123,8 +117,17 @@ test_nginx_configs() {
         fi
     done
 
+    # Old grafana configs should NOT exist (consolidated into grafana-proxy.conf)
+    for f in "nginx/nginx-with-grafana.conf" "nginx/nginx-with-grafana-ssl.conf"; do
+        if [ -f "${DEPLOY_DIR}/${f}" ]; then
+            fail "Stale config exists: $f (should be deleted after consolidation)"
+        else
+            pass "Removed: $f"
+        fi
+    done
+
     # Check nginx configs have ACME challenge location
-    for conf in nginx/nginx.conf nginx/nginx-ssl.conf nginx/nginx-with-grafana.conf nginx/nginx-with-grafana-ssl.conf; do
+    for conf in nginx/nginx.conf nginx/nginx-ssl.conf; do
         path="${DEPLOY_DIR}/${conf}"
         if [ -f "$path" ] && grep -q '/var/www/certbot' "$path" 2>/dev/null; then
             pass "ACME challenge in $conf"
@@ -133,17 +136,25 @@ test_nginx_configs() {
         fi
     done
 
-    # nginx-ssl and nginx-with-grafana-ssl must have SSL directives
-    for conf in nginx/nginx-ssl.conf nginx/nginx-with-grafana-ssl.conf; do
+    # Both configs should include grafana-proxy.conf
+    for conf in nginx/nginx.conf nginx/nginx-ssl.conf; do
         path="${DEPLOY_DIR}/${conf}"
-        if [ -f "$path" ]; then
-            if grep -q 'ssl_certificate' "$path" 2>/dev/null && grep -q 'listen 443' "$path" 2>/dev/null; then
-                pass "SSL directives in $conf"
-            else
-                fail "SSL directives missing in $conf"
-            fi
+        if [ -f "$path" ] && grep -q 'grafana-proxy.conf' "$path" 2>/dev/null; then
+            pass "Grafana include in $conf"
+        elif [ -f "$path" ]; then
+            fail "Grafana include missing in $conf"
         fi
     done
+
+    # nginx-ssl must have SSL directives
+    local path="${DEPLOY_DIR}/nginx/nginx-ssl.conf"
+    if [ -f "$path" ]; then
+        if grep -q 'ssl_certificate' "$path" 2>/dev/null && grep -q 'listen 443' "$path" 2>/dev/null; then
+            pass "SSL directives in nginx-ssl.conf"
+        else
+            fail "SSL directives missing in nginx-ssl.conf"
+        fi
+    fi
 }
 
 # =============================================================================
@@ -280,9 +291,9 @@ test_setup_ssl_ensure_env() {
         fail "ensure_env: append new key"
     fi
 
-    ensure_env "NGINX_CONF" "./nginx/nginx-with-grafana-ssl.conf"
-    if grep -q '^NGINX_CONF=./nginx/nginx-with-grafana-ssl.conf$' "${test_deploy_dir}/.env" && \
-       ! grep -q 'nginx-ssl.conf' "${test_deploy_dir}/.env"; then
+    ensure_env "NGINX_CONF" "./nginx/nginx-ssl.conf-updated"
+    if grep -q '^NGINX_CONF=./nginx/nginx-ssl.conf-updated$' "${test_deploy_dir}/.env" && \
+       ! grep -q '^NGINX_CONF=./nginx/nginx-ssl.conf$' "${test_deploy_dir}/.env"; then
         pass "ensure_env: update existing key"
     else
         fail "ensure_env: update existing key"
@@ -307,7 +318,7 @@ test_setup_ssl_structure() {
 
     grep -q 'ensure_env "NGINX_CONF"' "$script" 2>/dev/null && pass "setup-ssl.sh: persists NGINX_CONF in .env" || fail "setup-ssl.sh: should persist NGINX_CONF"
 
-    grep -q 'HUBSPOT_REDIRECT_URI' "$script" 2>/dev/null && pass "setup-ssl.sh: sets HUBSPOT_REDIRECT_URI" || fail "setup-ssl.sh: should set HUBSPOT_REDIRECT_URI"
+    grep -q '_apply_base_url' "$script" 2>/dev/null && pass "setup-ssl.sh: uses _apply_base_url from lib.sh" || fail "setup-ssl.sh: should use _apply_base_url"
 
     grep -q 'compose.*down' "$script" 2>/dev/null && pass "setup-ssl.sh: full stack restart (down/up)" || fail "setup-ssl.sh: should do full restart not docker cp"
 
@@ -323,7 +334,7 @@ test_install_ssl_integration() {
     local script="${DEPLOY_DIR}/install.sh"
     [ ! -f "$script" ] && { fail "install.sh not found at $script"; return; }
 
-    grep -q 'HUBSPOT_REDIRECT_URI' "$script" 2>/dev/null && pass "install.sh: _apply_base_url sets HUBSPOT_REDIRECT_URI" || fail "install.sh: _apply_base_url should set HUBSPOT_REDIRECT_URI"
+    grep -q '_apply_base_url' "$script" 2>/dev/null && pass "install.sh: calls _apply_base_url" || fail "install.sh: should call _apply_base_url"
 
     grep -q 'Set up HTTPS now' "$script" 2>/dev/null && pass "install.sh: SSL prompt when domain chosen" || fail "install.sh: should prompt for SSL when domain chosen"
 
@@ -419,7 +430,7 @@ test_edge_cases() {
     fi
 
     # Edge: nginx ssl configs have server_name (not just _)
-    for conf in nginx/nginx-ssl.conf nginx/nginx-with-grafana-ssl.conf; do
+    for conf in nginx/nginx-ssl.conf; do
         path="${DEPLOY_DIR}/${conf}"
         if [ -f "$path" ]; then
             if grep -q 'server_name _' "$path" 2>/dev/null; then
@@ -447,25 +458,21 @@ test_edge_cases() {
         edge_fail "install.sh: certbot/www may not exist before first compose"
     fi
 
-    # Edge: observability compose has all volumes (includes, ssl, certbot)
+    # Edge: observability compose depends on grafana (volumes are in base compose)
     local obs="${DEPLOY_DIR}/docker-compose.observability.yml"
     if [ -f "$obs" ]; then
-        local has_all=1
-        grep -q 'nginx/includes' "$obs" 2>/dev/null || has_all=0
-        grep -q 'nginx/ssl' "$obs" 2>/dev/null || has_all=0
-        grep -q 'certbot/www' "$obs" 2>/dev/null || has_all=0
-        if [ "$has_all" -eq 1 ]; then
-            edge_pass "observability compose: all nginx volumes present"
+        if grep -q 'grafana' "$obs" 2>/dev/null; then
+            edge_pass "observability compose: nginx depends on grafana"
         else
-            edge_fail "observability compose: may be missing includes/ssl/certbot volumes"
+            edge_fail "observability compose: nginx should depend on grafana"
         fi
     fi
 
-    # Edge: setup-ssl configure_nginx updates correct file for observability
-    if grep -q 'nginx-with-grafana-ssl' "${DEPLOY_DIR}/scripts/setup-ssl.sh" 2>/dev/null; then
-        edge_pass "setup-ssl: selects nginx-with-grafana-ssl when observability enabled"
+    # Edge: setup-ssl always uses nginx-ssl.conf (grafana is via include)
+    if grep -q 'nginx-ssl.conf' "${DEPLOY_DIR}/scripts/setup-ssl.sh" 2>/dev/null; then
+        edge_pass "setup-ssl: uses nginx-ssl.conf (grafana via include)"
     else
-        edge_fail "setup-ssl: may not use grafana-ssl config with observability"
+        edge_fail "setup-ssl: should reference nginx-ssl.conf"
     fi
 
     # Edge: ensure_env with empty .env (no newline) - append can concatenate
@@ -525,6 +532,15 @@ test_edge_cases() {
             edge_fail "nginx includes/$inc missing (nginx will fail)"
         fi
     done
+
+    # Edge: grafana-proxy.conf uses variable-based proxy_pass
+    if [ -f "${DEPLOY_DIR}/nginx/includes/grafana-proxy.conf" ]; then
+        if grep -q 'set \$grafana' "${DEPLOY_DIR}/nginx/includes/grafana-proxy.conf" 2>/dev/null; then
+            edge_pass "grafana-proxy.conf: uses variable-based proxy_pass"
+        else
+            edge_fail "grafana-proxy.conf: should use variable-based proxy_pass for graceful startup"
+        fi
+    fi
 
     # Edge: setup-ssl uses docker compose v2 (not docker-compose v1)
     if grep -q 'docker compose ' "${DEPLOY_DIR}/scripts/setup-ssl.sh" 2>/dev/null; then

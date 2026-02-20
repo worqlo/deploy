@@ -11,18 +11,8 @@ set -e
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
-log_success() { echo -e "${GREEN}✓${NC} $1"; }
-log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-log_error() { echo -e "${RED}✗${NC} $1"; }
+ENV_FILE="${DEPLOY_DIR}/.env"
+source "${SCRIPT_DIR}/lib.sh"
 
 # =============================================================================
 # Validation
@@ -101,13 +91,11 @@ main() {
         cat "$BACKUP_DIR/metadata.json" | grep -E '"timestamp"|"version"' | sed 's/[",]//g'
     fi
     
-    # Load environment
-    if [ -f "$DEPLOY_DIR/.env" ]; then
-        source "$DEPLOY_DIR/.env"
-    else
+    if [ ! -f "$DEPLOY_DIR/.env" ]; then
         log_error "Environment file not found: $DEPLOY_DIR/.env"
         exit 1
     fi
+    load_env
     
     # Stop services (except database)
     log_info "Stopping application services..."
@@ -156,16 +144,8 @@ main() {
     log_info "Starting services..."
     docker compose up -d
     
-    # Wait for health
     log_info "Waiting for services to be healthy..."
-    sleep 10
-    
-    for i in {1..30}; do
-        if curl -s "http://localhost:${HTTP_PORT:-80}/health" &> /dev/null; then
-            break
-        fi
-        sleep 2
-    done
+    wait_healthy 30 || true
     
     echo ""
     echo "═══════════════════════════════════════════════════════════════"

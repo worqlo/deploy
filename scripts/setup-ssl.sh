@@ -8,12 +8,12 @@
 
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="${INSTALL_DIR:-$(dirname "$SCRIPT_DIR")}"
+ENV_FILE="${DEPLOY_DIR}/.env"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
 
 # Configuration
 DOMAIN="${1:-}"
@@ -22,27 +22,8 @@ DOMAIN="${DOMAIN#http://}"
 DOMAIN="${DOMAIN%%/*}"  # strip path if present
 EMAIL="${2:-}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-}"  # Set to non-empty to skip "Continue?" prompt (e.g. when called from install)
-# Use INSTALL_DIR when passed from install.sh; otherwise derive from script location
-DEPLOY_DIR="${INSTALL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SSL_DIR="${DEPLOY_DIR}/nginx/ssl"
 CERTBOT_DIR="${DEPLOY_DIR}/certbot"
-
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
 show_usage() {
     cat << EOF
@@ -93,15 +74,7 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Load .env for ENABLE_OBSERVABILITY and HTTP_PORT (needed for health check)
-    if [ -f "${DEPLOY_DIR}/.env" ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source "${DEPLOY_DIR}/.env" 2>/dev/null || true
-        set +a
-        set -u
-    fi
+    load_env
 
     # Check if worqlo stack is running (retry: containers may take a moment after compose up)
     # Use health endpoint - more reliable than docker compose ps when .env is sourced
@@ -229,32 +202,14 @@ obtain_certificate() {
     fi
 }
 
-# Shared utilities (ensure_env, etc.)
-ENV_FILE="${DEPLOY_DIR}/.env"
-# shellcheck source=lib.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-
 # Configure nginx for SSL and persist NGINX_CONF in .env
 configure_nginx() {
     local domain=$1
     
     log_info "Configuring nginx for HTTPS..."
     
-    # Determine which nginx config to use based on observability
-    local nginx_conf
-    if [ -f "${DEPLOY_DIR}/.env" ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source "${DEPLOY_DIR}/.env" 2>/dev/null || true
-        set +a
-        set -u
-    fi
-    if [[ "${ENABLE_OBSERVABILITY:-}" =~ ^[Yy] ]] && [ -f "${DEPLOY_DIR}/nginx/nginx-with-grafana-ssl.conf" ]; then
-        nginx_conf="./nginx/nginx-with-grafana-ssl.conf"
-    else
-        nginx_conf="./nginx/nginx-ssl.conf"
-    fi
+    load_env
+    local nginx_conf="./nginx/nginx-ssl.conf"
     
     # Update server_name in the selected config
     sed -i.bak "s/server_name _;/server_name ${domain};/" "${DEPLOY_DIR}/${nginx_conf#./}"
@@ -262,18 +217,7 @@ configure_nginx() {
     # Persist NGINX_CONF in .env (docker-compose loads .env)
     ensure_env "NGINX_CONF" "$nginx_conf"
     
-    # Update base URL env vars for HTTPS
-    ensure_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
-    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "wss://${domain}/ws"
-    ensure_env "NEXTAUTH_URL" "https://${domain}"
-    ensure_env "S3_PUBLIC_ENDPOINT_URL" "https://${domain}/s3"
-    ensure_env "FRONTEND_RESET_PASSWORD_URL" "https://${domain}/reset-password"
-    ensure_env "FRONTEND_LOGIN_URL" "https://${domain}"
-    ensure_env "SALESFORCE_REDIRECT_URI" "https://${domain}/integrations/salesforce/callback"
-    ensure_env "HUBSPOT_REDIRECT_URI" "https://${domain}/integrations/hubspot/callback"
-    ensure_env "GRAFANA_ROOT_URL" "https://${domain}/grafana/"
-    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${domain}"
-    ensure_env "GRAFANA_COOKIE_SECURE" "true"
+    _apply_base_url "https://${domain}"
     
     log_success "Nginx configured for HTTPS"
 }
@@ -325,24 +269,9 @@ restart_services() {
     
     cd "${DEPLOY_DIR}"
     
-    # Load .env for compose file selection
-    if [ -f .env ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source .env 2>/dev/null || true
-        set +a
-        set -u
-    fi
-    
-    # Build compose args (match deploy_services logic)
-    local compose_args="-f docker-compose.yml"
-    if [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "docker-compose.observability.yml" ]; then
-        compose_args="$compose_args -f docker-compose.observability.yml"
-    fi
-    if [ -f "docker-compose.ghcr.yml" ]; then
-        compose_args="$compose_args -f docker-compose.ghcr.yml"
-    fi
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
     
     docker compose $compose_args down
     docker compose $compose_args up -d

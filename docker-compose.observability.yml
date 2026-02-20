@@ -237,14 +237,9 @@ services:
       - ALL
 
   # ===========================================================================
-  # Update Nginx to expose Grafana (uses NGINX_CONF when SSL is configured)
+  # Nginx depends on Grafana (grafana-proxy.conf is included in base config)
   # ===========================================================================
   nginx:
-    volumes:
-      - ${NGINX_CONF:-./nginx/nginx-with-grafana.conf}:/etc/nginx/nginx.conf:ro
-      - ./nginx/includes:/etc/nginx/includes:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./certbot/www:/var/www/certbot:ro
     depends_on:
       grafana:
         condition: service_healthy

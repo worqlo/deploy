@@ -27,16 +27,16 @@ Best practice: review before running: `less install.sh` then `bash install.sh`
 
 ## Non-Interactive Install
 
-Requires an LLM config. SGLang (default):
-
-```bash
-SGLANG_BASE_URL=http://your-sglang-host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
-```
-
-Or OpenAI / Grok:
+Requires an LLM config. OpenAI (default):
 
 ```bash
 GHCR_OWNER=worqlo OPENAI_API_KEY=sk-your-key curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
+```
+
+Or SGLang / Grok:
+
+```bash
+SGLANG_BASE_URL=http://your-sglang-host:30000 SGLANG_MODEL=openai/gpt-oss-120b curl -fsSL https://raw.githubusercontent.com/worqlo/deploy/main/install.sh | bash
 ```
 
 Custom install directory:
@@ -65,15 +65,26 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 
 ## What's Included
 
-- `install.sh` – Hosted installer (clones this repo, generates secrets, pulls images)
-- `docker-compose.yml` – Service definitions
-- `docker-compose.ghcr.yml` – Override to use pre-built images (no build from source)
+- `install.sh` – Interactive/non-interactive installer
+- `scripts/worqloctl` – CLI for managing deployments (`worqloctl status`, `worqloctl update`, etc.)
+- `scripts/lib.sh` – Shared utilities used by all scripts
+- `scripts/setup-ssl.sh` – HTTPS setup with Let's Encrypt
 - `scripts/generate-secrets.sh` – Secure secret generation
 - `scripts/update-ghcr.sh` – Update to newer image tags
-- `nginx/` – Reverse proxy config
+- `scripts/backup.sh` / `restore.sh` / `rollback.sh` – Backup and recovery
+- `docker-compose.yml` – Core service definitions
+- `docker-compose.ghcr.yml` – Override to use pre-built GHCR images
+- `docker-compose.observability.yml` – Grafana, Prometheus, Loki stack
+- `nginx/` – Reverse proxy config (includes Grafana proxy via `includes/grafana-proxy.conf`)
 - `env.example` – Configuration template
 
 ## Updating
+
+```bash
+worqloctl update
+```
+
+Or manually:
 
 ```bash
 git pull origin main

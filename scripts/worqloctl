@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# =============================================================================
+# worqloctl - Worqlo deployment management CLI
+# =============================================================================
+# Thin dispatch wrapper around the individual deploy scripts.
+# Install: symlink to /usr/local/bin/worqloctl (done by install.sh on Linux)
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="${DEPLOY_DIR}/.env"
+source "${SCRIPT_DIR}/lib.sh"
+
+VERSION_FILE="${DEPLOY_DIR}/VERSION"
+
+show_help() {
+    echo ""
+    echo -e "${BOLD}worqloctl${NC} — Worqlo deployment management"
+    echo ""
+    echo -e "${BOLD}USAGE${NC}"
+    echo "    worqloctl <command> [options]"
+    echo ""
+    echo -e "${BOLD}COMMANDS${NC}"
+    echo "    install     Run the installer"
+    echo "    update      Update to latest (or specific) image tag"
+    echo "    backup      Create a backup"
+    echo "    restore     Restore from a backup file"
+    echo "    rollback    Rollback to the last backup"
+    echo "    ssl         Set up HTTPS with Let's Encrypt"
+    echo "    logs        Stream docker compose logs"
+    echo "    status      Show service status and version info"
+    echo "    restart     Restart services"
+    echo "    stop        Stop all services"
+    echo "    down        Stop and remove containers"
+    echo ""
+    echo -e "${BOLD}EXAMPLES${NC}"
+    echo "    worqloctl status"
+    echo "    worqloctl update --version v1.2.0"
+    echo "    worqloctl logs -f api"
+    echo "    worqloctl ssl app.example.com admin@example.com"
+    echo "    worqloctl backup"
+    echo ""
+}
+
+cmd_status() {
+    echo ""
+    echo -e "${BOLD}Worqlo Status${NC}"
+    echo "─────────────────────────────────────────"
+    echo "  Deploy dir: ${DEPLOY_DIR}"
+
+    if [[ -f "$VERSION_FILE" ]]; then
+        # shellcheck source=/dev/null
+        source "$VERSION_FILE" 2>/dev/null || true
+        echo "  Deploy rev: ${deploy_rev:-unknown}"
+        echo "  Image tag:  ${image_tag:-unknown}"
+        echo "  Installed:  ${installed_at:-unknown}"
+    else
+        echo "  Version:    (no VERSION file)"
+    fi
+    echo ""
+
+    cd "$DEPLOY_DIR"
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
+    echo -e "${BOLD}Services${NC}"
+    docker compose $compose_args ps
+    echo ""
+}
+
+cmd_logs() {
+    cd "$DEPLOY_DIR"
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
+    docker compose $compose_args logs "$@"
+}
+
+cmd_restart() {
+    cd "$DEPLOY_DIR"
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
+    log_info "Restarting services..."
+    docker compose $compose_args restart "$@"
+    log_success "Services restarted"
+}
+
+cmd_stop() {
+    cd "$DEPLOY_DIR"
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
+    log_info "Stopping services..."
+    docker compose $compose_args stop "$@"
+    log_success "Services stopped"
+}
+
+cmd_down() {
+    cd "$DEPLOY_DIR"
+    load_env
+    local compose_args
+    compose_args=$(build_compose_args)
+    log_info "Stopping and removing containers..."
+    docker compose $compose_args down "$@"
+    log_success "Containers removed"
+}
+
+case "${1:-}" in
+    install)
+        shift
+        exec "$DEPLOY_DIR/install.sh" "$@"
+        ;;
+    update)
+        shift
+        exec "$SCRIPT_DIR/update-ghcr.sh" "$@"
+        ;;
+    backup)
+        shift
+        exec "$SCRIPT_DIR/backup.sh" "$@"
+        ;;
+    restore)
+        shift
+        exec "$SCRIPT_DIR/restore.sh" "$@"
+        ;;
+    rollback)
+        shift
+        exec "$SCRIPT_DIR/rollback.sh" "$@"
+        ;;
+    ssl)
+        shift
+        exec "$SCRIPT_DIR/setup-ssl.sh" "$@"
+        ;;
+    logs)
+        shift
+        cmd_logs "$@"
+        ;;
+    status)
+        cmd_status
+        ;;
+    restart)
+        shift
+        cmd_restart "$@"
+        ;;
+    stop)
+        shift
+        cmd_stop "$@"
+        ;;
+    down)
+        shift
+        cmd_down "$@"
+        ;;
+    -h|--help|help|"")
+        show_help
+        ;;
+    *)
+        log_error "Unknown command: $1"
+        show_help
+        exit 1
+        ;;
+esac

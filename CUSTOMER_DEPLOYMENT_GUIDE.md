@@ -109,7 +109,22 @@ Containers will show "AMD64" warnings in Docker Desktop; they are harmless and r
 3. **Configure:** `cp env.example .env` and edit (LLM keys, passwords, etc.)
 4. **Set image source:** `export GHCR_OWNER=worqlo` and `export IMAGE_TAG=0.0.4` (or `latest`)
 5. **Deploy:** Platform-specific compose command from the table above
-6. **Initialize tenant:** `POST /api/tenants/initialize` for first tenant
+6. **Set up HTTPS (optional):** `worqloctl ssl app.example.com admin@example.com`
+7. **Initialize tenant:** `POST /api/tenants/initialize` for first tenant
+
+### Management with worqloctl
+
+After installation, use the `worqloctl` CLI to manage the deployment:
+
+```bash
+worqloctl status          # Show service status and version info
+worqloctl update          # Update to latest (or specific) image tag
+worqloctl logs -f api     # Stream logs for a service
+worqloctl ssl DOMAIN EMAIL  # Set up HTTPS with Let's Encrypt
+worqloctl backup          # Create a backup
+worqloctl restore FILE    # Restore from backup
+worqloctl restart         # Restart all services
+```
 
 ### Example: Full Deployment
 
@@ -146,8 +161,8 @@ nano .env  # Set GRAFANA_ADMIN_PASSWORD=your-secure-password
 # Deploy with observability
 docker compose -f docker-compose.yml -f docker-compose.observability.yml -f docker-compose.ghcr.yml up -d
 
-# Grafana on port 3001
-open http://localhost:3001
+# Grafana is served behind nginx at /grafana/
+open http://localhost/grafana/
 ```
 
 ### Network Access (IP)
@@ -173,8 +188,9 @@ Provide customers with:
 - [ ] **Platform matrix** – Table like above
 - [ ] **GHCR setup** – Public vs private, login if private
 - [ ] **Troubleshooting** – Common errors (manifest, auth, ports)
-- [ ] **Versioning** – How to pin versions and upgrade (`IMAGE_TAG`)
-- [ ] **Production checklist** – Security, backups, monitoring
+- [ ] **Versioning** – How to pin versions and upgrade (`IMAGE_TAG`, `worqloctl update`)
+- [ ] **Production checklist** – Security, backups (`worqloctl backup`), monitoring
+- [ ] **HTTPS setup** – Domain DNS + `worqloctl ssl` for Let's Encrypt
 
 ---
 

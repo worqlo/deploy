@@ -22,22 +22,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Colors (readonly for constants)
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly CYAN='\033[0;36m'
-readonly NC='\033[0m'
-readonly BOLD='\033[1m'
-
-# Deploy bundle source
-# - clone (default): DEPLOY_REPO, DEPLOY_BRANCH
-# - tarball: DEPLOY_TARBALL_URL (e.g. https://github.com/worqlo/deploy/releases/download/v1.0.0/worqlo-deploy.tar.gz)
-# - cdn: DEPLOY_CDN_URL (e.g. https://cdn.worqlo.ai/deploy/v1.0.0.tar.gz)
-DEPLOY_REPO="${DEPLOY_REPO:-worqlo/deploy}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
-
 # Install directory
 if [ "$(uname)" = "Darwin" ]; then
     INSTALL_DIR="${INSTALL_DIR:-/tmp/worqlo}"
@@ -45,11 +29,29 @@ else
     INSTALL_DIR="${INSTALL_DIR:-/opt/worqlo}"
 fi
 
-log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
-log_success() { echo -e "${GREEN}✓${NC} $1"; }
-log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-log_error() { echo -e "${RED}✗${NC} $1"; }
-log_step() { echo -e "\n${BOLD}${CYAN}▶ $1${NC}"; }
+# Try to source lib.sh early (available when running from deploy directory)
+if [[ -f "scripts/lib.sh" ]]; then
+    source scripts/lib.sh
+elif [[ -n "${INSTALL_DIR:-}" ]] && [[ -f "${INSTALL_DIR}/scripts/lib.sh" ]]; then
+    source "${INSTALL_DIR}/scripts/lib.sh"
+fi
+# Bootstrap fallback: minimal colors/logging before deploy bundle is fetched
+if [[ -z "${_WORQLO_LIB_LOADED:-}" ]]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+    log_info()    { echo -e "${BLUE}ℹ${NC} $1"; }
+    log_success() { echo -e "${GREEN}✓${NC} $1"; }
+    log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+    log_error()   { echo -e "${RED}✗${NC} $1"; }
+    log_step()    { echo -e "\n${BOLD}${CYAN}▶ $1${NC}"; }
+fi
+
+# Deploy bundle source
+# - clone (default): DEPLOY_REPO, DEPLOY_BRANCH
+# - tarball: DEPLOY_TARBALL_URL (e.g. https://github.com/worqlo/deploy/releases/download/v1.0.0/worqlo-deploy.tar.gz)
+# - cdn: DEPLOY_CDN_URL (e.g. https://cdn.worqlo.ai/deploy/v1.0.0.tar.gz)
+DEPLOY_REPO="${DEPLOY_REPO:-worqlo/deploy}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 # =============================================================================
 # Step 1: Prerequisites
@@ -234,86 +236,13 @@ generate_config() {
     log_success "Secrets generated"
 }
 
-# Strip http://, https://, and path from URL (for domain or IP input)
-_strip_scheme_and_path() {
-    local d="${1:-}"
-    d="${d#https://}"
-    d="${d#http://}"
-    echo "${d%%/*}"
-}
-
-# Apply BASE_URL to all URL-related env vars (for IP or domain access)
-_apply_base_url() {
-    local base="$1"
-    base="${base%/}"  # strip trailing slash
-    local scheme host port
-    case "$base" in
-        https://*)
-            scheme="https"
-            base="${base#https://}"
-            ;;
-        http://*)
-            scheme="http"
-            base="${base#http://}"
-            ;;
-        *)
-            scheme="http"
-            ;;
-    esac
-    if [[ "$base" == *:* ]]; then
-        host="${base%%:*}"
-        port="${base##*:}"
-    else
-        host="$base"
-        port=""
-    fi
-    local ws_scheme="ws"
-    [ "$scheme" = "https" ] && ws_scheme="wss"
-
-    local base_with_port="$base"
-    [ -n "$port" ] && base_with_port="${scheme}://${host}:${port}" || base_with_port="${scheme}://${host}"
-
-    ensure_env "NEXT_PUBLIC_API_URL" "${base_with_port}/api"
-    ensure_env "NEXT_PUBLIC_WEBSOCKET_URL" "${ws_scheme}://${host}${port:+:${port}}/ws"
-    ensure_env "NEXTAUTH_URL" "$base_with_port"
-    ensure_env "FRONTEND_RESET_PASSWORD_URL" "${base_with_port}/reset-password"
-    ensure_env "FRONTEND_LOGIN_URL" "$base_with_port"
-    local cors_origins="${base_with_port}"
-    if [ "$scheme" = "http" ] && [ -n "$host" ]; then
-        cors_origins="${base_with_port},${scheme}://${host}:80,${scheme}://${host}:3000"
-    fi
-    ensure_env "CORS_ALLOW_ORIGINS" "$cors_origins"
-    if [ "$scheme" = "https" ]; then
-        ensure_env "S3_PUBLIC_ENDPOINT_URL" "https://${host}/s3"
-    else
-        ensure_env "S3_PUBLIC_ENDPOINT_URL" "http://${host}:9000"
-    fi
-    ensure_env "SALESFORCE_REDIRECT_URI" "${base_with_port}/integrations/salesforce/callback"
-    ensure_env "HUBSPOT_REDIRECT_URI" "${base_with_port}/integrations/hubspot/callback"
-    ensure_env "GRAFANA_ROOT_URL" "${base_with_port}/grafana/"
-    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${host}"
-    if [ "$scheme" = "https" ]; then
-        ensure_env "GRAFANA_COOKIE_SECURE" "true"
-    else
-        ensure_env "GRAFANA_COOKIE_SECURE" "false"
-    fi
-}
-
 # =============================================================================
 # Step 5: Configuration prompts (or use env vars for non-interactive)
 # =============================================================================
 prompt_config() {
     log_step "Configuration"
 
-    # Load .env so we can use HTTP_PORT etc.
-    if [ -f .env ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source .env 2>/dev/null || true
-        set +a
-        set -u
-    fi
+    load_env
 
     # Treat generate-secrets placeholders as unset so interactive prompts run
     case "${SGLANG_BASE_URL:-}" in *your-sglang-host*) unset SGLANG_BASE_URL ;; esac
@@ -358,7 +287,7 @@ prompt_config() {
         case $LLM_CHOICE in
             1)
                 USE_OLLAMA_PROFILE=""
-                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
+                ensure_env "LLM_PROVIDER" "openai"
                 read -p "OpenAI API key: " OPENAI_API_KEY </dev/tty
                 if [ -z "$OPENAI_API_KEY" ]; then
                     log_error "OpenAI API key is required"
@@ -368,7 +297,7 @@ prompt_config() {
                 ;;
             2)
                 USE_OLLAMA_PROFILE=""
-                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
+                ensure_env "LLM_PROVIDER" "sglang"
                 read -p "SGLang base URL (e.g. http://192.168.0.2:30000): " SGLANG_BASE_URL </dev/tty
                 read -p "SGLang model (e.g. openai/gpt-oss-120b) [openai/gpt-oss-120b]: " SGLANG_MODEL_INPUT </dev/tty
                 SGLANG_MODEL="${SGLANG_MODEL_INPUT:-openai/gpt-oss-120b}"
@@ -408,7 +337,7 @@ prompt_config() {
                 ;;
             3)
                 USE_OLLAMA_PROFILE=""
-                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env
+                ensure_env "LLM_PROVIDER" "grok"
                 read -p "Grok API key: " GROK_API_KEY </dev/tty
                 if [ -z "$GROK_API_KEY" ]; then
                     log_error "Grok API key is required"
@@ -418,7 +347,7 @@ prompt_config() {
                 ;;
             4)
                 USE_OLLAMA_PROFILE="--profile ollama"
-                sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env
+                ensure_env "LLM_PROVIDER" "ollama"
                 log_info "Ollama selected (local LLM)"
                 ;;
             *)
@@ -435,10 +364,10 @@ prompt_config() {
         fi
         USE_OLLAMA_PROFILE=""
         if [ -n "${OPENAI_API_KEY:-}" ]; then
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=openai/' .env
+            ensure_env "LLM_PROVIDER" "openai"
             ensure_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
         elif [ -n "${SGLANG_BASE_URL:-}" ]; then
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=sglang/' .env
+            ensure_env "LLM_PROVIDER" "sglang"
             ensure_env "SGLANG_BASE_URL" "$SGLANG_BASE_URL"
             ensure_env "SGLANG_MODEL" "${SGLANG_MODEL:-openai/gpt-oss-120b}"
             # Non-interactive embedding config: KB_EMBEDDING_BASE_URL=http://host:30001/v1
@@ -449,14 +378,13 @@ prompt_config() {
                 ensure_env "KB_EMBEDDING_DIMENSIONS" "${KB_EMBEDDING_DIMENSIONS:-2560}"
             fi
         elif [ -n "${GROK_API_KEY:-}" ]; then
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=grok/' .env
+            ensure_env "LLM_PROVIDER" "grok"
             ensure_env "GROK_API_KEY" "$GROK_API_KEY"
         elif [ -n "${OLLAMA_BASE_URL:-}" ] || [ "${LLM_PROVIDER:-}" = "ollama" ]; then
             USE_OLLAMA_PROFILE="--profile ollama"
-            sed -i.bak 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env 2>/dev/null || sed -i '' 's/^LLM_PROVIDER=.*/LLM_PROVIDER=ollama/' .env
+            ensure_env "LLM_PROVIDER" "ollama"
         fi
     fi
-    rm -f .env.bak
 
     # Access URL - how will users reach Worqlo? (localhost / IP / domain)
     if [ -n "${BASE_URL:-}" ]; then
@@ -560,7 +488,6 @@ prompt_config() {
             ENABLE_OBSERVABILITY=Y
         fi
     fi
-    # Persist so setup-ssl.sh (and future runs) select nginx-with-grafana-ssl.conf when observability is on
     ensure_env "ENABLE_OBSERVABILITY" "$ENABLE_OBSERVABILITY"
 }
 
@@ -575,12 +502,7 @@ deploy_services() {
     # Ensure certbot/www exists for ACME challenges (nginx volume mount)
     mkdir -p ./certbot/www
 
-    # Order per doc: base, observability, ghcr (so GHCR overrides images last)
-    compose_args="-f docker-compose.yml"
-    if [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "docker-compose.observability.yml" ]; then
-        compose_args="$compose_args -f docker-compose.observability.yml"
-    fi
-    compose_args="$compose_args -f docker-compose.ghcr.yml"
+    compose_args=$(build_compose_args)
     profile_args="${USE_OLLAMA_PROFILE:-}"
 
     # Apple Silicon: try native first; fallback to mac override if pull fails
@@ -614,47 +536,16 @@ deploy_services() {
 # Step 8: Health check
 # =============================================================================
 wait_for_health() {
-    if [ -f .env ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source .env 2>/dev/null || true
-        set +a
-        set -u
-    fi
-
-    HEALTH_URL="http://localhost:${HTTP_PORT:-80}/health"
-    log_step "Waiting for services (up to 2 min): $HEALTH_URL"
-
-    for i in $(seq 1 60); do
-        if curl -sf --connect-timeout 5 "$HEALTH_URL" 2>/dev/null | grep -q '"status"'; then
-            if [ -n "${HTTP_PORT:-}" ] && [ "${HTTP_PORT:-}" != "80" ]; then
-                log_success "Ready at http://localhost:${HTTP_PORT}"
-            else
-                log_success "Ready at http://localhost"
-            fi
-            return 0
-        fi
-        sleep 2
-        printf "."
-        [ "$(( i % 15 ))" -eq 0 ] && echo " ${i}/60"
-    done
-    echo ""
-    log_warning "Health check timed out (services may still be starting). Check: docker compose -f docker-compose.yml -f docker-compose.observability.yml -f docker-compose.ghcr.yml ps"
+    load_env
+    log_step "Waiting for services (up to 2 min)..."
+    wait_healthy 60 || log_warning "Services may still be starting. Check: docker compose $(build_compose_args) ps"
 }
 
 # =============================================================================
 # Step 9: Post-install summary
 # =============================================================================
 print_summary() {
-    if [ -f .env ]; then
-        set +u
-        set -a
-        # shellcheck source=/dev/null
-        source .env 2>/dev/null || true
-        set +a
-        set -u
-    fi
+    load_env
     DISPLAY_URL="http://localhost"
     if [ -n "${NEXTAUTH_URL:-}" ] && [ "${NEXTAUTH_URL:-}" != "http://localhost" ]; then
         DISPLAY_URL="$NEXTAUTH_URL"
@@ -672,13 +563,13 @@ print_summary() {
     echo ""
     echo "  URL:      $DISPLAY_URL"
     echo "  Location: $INSTALL_DIR"
-    echo "  Update:   cd $INSTALL_DIR && ./scripts/update-ghcr.sh"
-    if [ -n "${DOMAIN:-}" ] || [ "${DISPLAY_URL#https://}" != "$DISPLAY_URL" ]; then
-        echo "  Note:     Run 'docker compose' from $INSTALL_DIR so sign-out uses your domain (not localhost)"
-    fi
-    LOGS_FILES="-f docker-compose.yml"
-    [[ "${ENABLE_OBSERVABILITY:-Y}" =~ ^[Yy] ]] && [ -f "docker-compose.observability.yml" ] && LOGS_FILES="$LOGS_FILES -f docker-compose.observability.yml"
-    echo "  Logs:     docker compose $LOGS_FILES -f docker-compose.ghcr.yml logs -f api"
+    echo ""
+    echo "  Commands (from $INSTALL_DIR):"
+    echo "    worqloctl status    - Show service status"
+    echo "    worqloctl update    - Update to latest version"
+    echo "    worqloctl logs -f   - Stream logs"
+    echo "    worqloctl backup    - Create a backup"
+    echo "    worqloctl ssl       - Set up HTTPS"
     echo ""
 }
 
@@ -727,6 +618,19 @@ main() {
         log_step "Setting up SSL with Let's Encrypt..."
         INSTALL_DIR="$INSTALL_DIR" SKIP_CONFIRM=1 ./scripts/setup-ssl.sh "$DOMAIN_FOR_SSL" "$SSL_EMAIL" || true
     fi
+
+    # Write VERSION file for tracking
+    cat > "$INSTALL_DIR/VERSION" <<VEOF
+deploy_rev=$(git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+image_tag=${IMAGE_TAG:-latest}
+installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+VEOF
+
+    # Symlink worqloctl into PATH (Linux only; macOS users run from deploy dir)
+    if [ "$(uname)" != "Darwin" ] && [ -d /usr/local/bin ]; then
+        ln -sf "$INSTALL_DIR/scripts/worqloctl" /usr/local/bin/worqloctl 2>/dev/null || true
+    fi
+
     print_summary
 }
 

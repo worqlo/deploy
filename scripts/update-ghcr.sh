@@ -17,22 +17,12 @@ set -e
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="${DEPLOY_DIR}/.env"
+source "${SCRIPT_DIR}/lib.sh"
 BACKUP_BEFORE_UPDATE=true
 TARGET_VERSION=""
 USE_MAC_OVERRIDE=false
 USE_OBSERVABILITY=false
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
-log_success() { echo -e "${GREEN}✓${NC} $1"; }
-log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-log_error() { echo -e "${RED}✗${NC} $1"; }
 
 # =============================================================================
 # Parse Arguments
@@ -85,18 +75,16 @@ done
 # Compose File Selection
 # =============================================================================
 
-build_compose_args() {
-    local args="-f $DEPLOY_DIR/docker-compose.yml -f $DEPLOY_DIR/docker-compose.ghcr.yml"
-    if [ "$USE_OBSERVABILITY" = true ]; then
-        args="$args -f $DEPLOY_DIR/docker-compose.observability.yml"
-    fi
-    if [ "$USE_MAC_OVERRIDE" = true ]; then
-        args="$args -f $DEPLOY_DIR/docker-compose.ghcr.mac.yml"
+_build_compose_args() {
+    local args
+    args=$(build_compose_args)
+    if [ "$USE_MAC_OVERRIDE" = true ] && [ -f "$DEPLOY_DIR/docker-compose.ghcr.mac.yml" ]; then
+        args="$args -f docker-compose.ghcr.mac.yml"
     fi
     echo "$args"
 }
 
-COMPOSE_ARGS=$(build_compose_args)
+COMPOSE_ARGS=$(_build_compose_args)
 
 # =============================================================================
 # Pre-flight Checks
@@ -105,13 +93,7 @@ COMPOSE_ARGS=$(build_compose_args)
 preflight_checks() {
     log_info "Running pre-flight checks..."
 
-    # Load .env if present
-    if [ -f "$DEPLOY_DIR/.env" ]; then
-        set -a
-        # shellcheck source=/dev/null
-        source "$DEPLOY_DIR/.env"
-        set +a
-    fi
+    load_env
 
     # Check GHCR_OWNER
     if [ -z "${GHCR_OWNER:-}" ]; then
@@ -206,23 +188,10 @@ perform_update() {
 
     # Wait for health checks
     log_info "Waiting for services to be healthy..."
-    HEALTH_URL="http://localhost:${HTTP_PORT:-80}/health"
-    HEALTHY=false
-    for i in $(seq 1 60); do
-        if curl -sf "$HEALTH_URL" | grep -q "ok\|healthy" 2>/dev/null; then
-            HEALTHY=true
-            break
-        fi
-        sleep 2
-        echo -n "."
-    done
-    echo ""
-
-    if [ "$HEALTHY" = true ]; then
-        log_success "All services healthy"
+    if wait_healthy 60; then
         return 0
     else
-        log_error "Health check failed at $HEALTH_URL"
+        log_error "Health check failed"
         return 1
     fi
 }
@@ -292,13 +261,21 @@ main() {
 
     if perform_update; then
         cleanup
+
+        # Update VERSION file
+        cat > "$DEPLOY_DIR/VERSION" <<VEOF
+deploy_rev=$(git -C "$DEPLOY_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+image_tag=${IMAGE_TAG:-latest}
+installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+VEOF
+
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         echo -e "${GREEN}  Update Complete!${NC}"
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
         echo "  Your Worqlo instance has been updated to ${IMAGE_TAG}."
-        echo "  Please verify at: http://localhost"
+        echo "  Check status: worqloctl status"
         echo ""
     else
         rollback

@@ -108,7 +108,7 @@ The deploy bundle must contain:
 - `env.example`
 - `nginx/` (config, includes)
 - `init-db.sql`
-- `scripts/` (`generate-secrets.sh`, `backup.sh`, `restore.sh`, `update-ghcr.sh`, etc.)
+- `scripts/` (`lib.sh`, `worqloctl`, `generate-secrets.sh`, `setup-ssl.sh`, `backup.sh`, `restore.sh`, `update-ghcr.sh`, etc.)
 - Optional: `docker-compose.observability.yml`, `prometheus/`, `grafana/`, `loki/`, `alloy/`
 
 ### Step 4: Generate Secrets
@@ -123,16 +123,22 @@ This creates: `JWT_WS_SECRET`, `NEXTAUTH_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PA
 
 | Variable | Prompt | Default | Required |
 |----------|--------|---------|----------|
-| `GHCR_OWNER` | "GitHub org for images (e.g. worqlo)"
+| `GHCR_OWNER` | "GitHub org for images (e.g. worqlo)" | `worqlo` | Yes |
 | `IMAGE_TAG` | "Image tag (latest or v1.0.0)" | `latest` | No |
-| LLM provider | Choice: OpenAI, Grok, SGLang, Ollama | |
+| Hosting mode | Choice: localhost, IP address, domain | domain | No |
+| Domain / IP | "Enter your domain or IP" | auto-detected IP | If not localhost |
+| LLM provider | Choice: OpenAI, Grok, SGLang, Ollama | OpenAI | No |
 | `OPENAI_API_KEY` | If OpenAI selected | | Yes for OpenAI |
 | `GROK_API_KEY` | If Grok selected | | Yes for Grok |
 | `SGLANG_BASE_URL` + `SGLANG_MODEL` | If SGLang selected | | Yes for SGLang |
+| Embedding provider | Choice: OpenAI, SGLang | OpenAI | No |
+| `KB_EMBEDDING_BASE_URL` | If SGLang embedding selected | | Yes for SGLang embed |
+| `KB_EMBEDDING_DIMENSIONS` | Embedding dimensions | 1536 (OpenAI) | No |
 | Observability | "Enable Grafana/Prometheus? [Y/n]" | Y | No |
 | `GRAFANA_ADMIN_PASSWORD` | If observability enabled | | Yes if observability |
+| HTTPS setup | "Set up HTTPS now? [Y/n]" | prompted if domain chosen | No |
 
-**Note:** `generate-secrets.sh` already outputs `GRAFANA_ADMIN_PASSWORD` when run. If using it, only append `GHCR_OWNER`, `IMAGE_TAG`, and the LLM key; otherwise prompt for Grafana password when observability is enabled.
+**Note:** `generate-secrets.sh` already outputs `GRAFANA_ADMIN_PASSWORD` when run. The installer calls `_apply_base_url` from `lib.sh` to derive all URL-related variables (CORS, WebSocket, Grafana, S3, OAuth callbacks) from the chosen domain or IP.
 
 Append these to `.env`.
 
@@ -188,9 +194,10 @@ echo "Health check timed out"
 Print:
 
 - URL: `http://localhost` (or `https://$DOMAIN` if configured)
+- Grafana: `http://localhost/grafana/` (or `https://$DOMAIN/grafana/`)
 - Location: `$INSTALL_DIR`
-- Update: `./scripts/update-ghcr.sh`
-- Logs: `docker compose -f docker-compose.yml -f docker-compose.ghcr.yml logs -f api`
+- Management CLI: `worqloctl status`, `worqloctl update`, `worqloctl logs -f api`
+- HTTPS: `worqloctl ssl DOMAIN EMAIL`
 
 ---
 
@@ -264,7 +271,7 @@ If `GHCR_OWNER` and the LLM key are set, skip prompts and proceed.
 2. **Pipe to bash:** Document that `curl | bash` runs remote code; users should review the script before running (e.g. `curl -fsSL https://get.worqlo.ai/install.sh` to inspect).
 3. **Best practice:** Download, inspect, then run: `curl -fsSL https://get.worqlo.ai/install.sh -o install.sh && less install.sh && bash install.sh`
 4. **Secrets:** `.env` has `600` permissions; never log secrets.
-5. **Updates:** `update-ghcr.sh` pulls new images; no re-clone of deploy bundle needed.
+5. **Updates:** `worqloctl update` pulls new images; no re-clone of deploy bundle needed.
 
 ---
 
