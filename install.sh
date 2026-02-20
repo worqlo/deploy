@@ -542,6 +542,77 @@ wait_for_health() {
 }
 
 # =============================================================================
+# Step 8b: Configure host-level nginx (if present)
+# =============================================================================
+configure_host_nginx() {
+    # Skip on macOS (development only, no host nginx expected)
+    [ "$(uname)" = "Darwin" ] && return 0
+
+    # Detect host-level nginx (not the Dockerized one)
+    local nginx_bin=""
+    if [ -x /usr/sbin/nginx ]; then
+        nginx_bin="/usr/sbin/nginx"
+    elif command -v nginx &>/dev/null; then
+        nginx_bin=$(command -v nginx)
+    fi
+    [ -z "$nginx_bin" ] && return 0
+
+    local nginx_conf="/etc/nginx/nginx.conf"
+    [ -f "$nginx_conf" ] || return 0
+
+    log_step "Host nginx detected ($nginx_bin) - checking configuration..."
+
+    local needs_reload=false
+
+    # Check client_max_body_size in http block
+    if grep -qE '^\s*client_max_body_size' "$nginx_conf" 2>/dev/null; then
+        local current_size
+        current_size=$(grep -oE 'client_max_body_size[[:space:]]+[0-9]+[mMkKgG]?' "$nginx_conf" | head -1 | awk '{print $2}')
+        log_info "Host nginx client_max_body_size is: ${current_size:-default (1M)}"
+
+        # Parse to bytes for comparison (anything < 50M needs updating)
+        local size_bytes=0
+        case "${current_size}" in
+            *[gG]) size_bytes=$(( ${current_size%[gG]} * 1073741824 )) ;;
+            *[mM]) size_bytes=$(( ${current_size%[mM]} * 1048576 )) ;;
+            *[kK]) size_bytes=$(( ${current_size%[kK]} * 1024 )) ;;
+            *)     size_bytes=$(( current_size )) 2>/dev/null || size_bytes=0 ;;
+        esac
+
+        if [ "$size_bytes" -lt 52428800 ] 2>/dev/null; then
+            log_warning "Host nginx client_max_body_size ($current_size) is below 50M - updating..."
+            sed -i.bak "s/client_max_body_size[[:space:]]*[0-9][0-9]*[mMkKgG]*/client_max_body_size 50M/" "$nginx_conf"
+            needs_reload=true
+        else
+            log_success "Host nginx client_max_body_size is sufficient ($current_size)"
+        fi
+    else
+        log_warning "Host nginx has no client_max_body_size set (defaults to 1M) - adding 50M..."
+        # Insert client_max_body_size inside the http block, after the opening brace
+        sed -i.bak '/^http[[:space:]]*{/a\    client_max_body_size 50M;' "$nginx_conf"
+        needs_reload=true
+    fi
+
+    if [ "$needs_reload" = true ]; then
+        # Validate config before reload
+        if $nginx_bin -t 2>/dev/null; then
+            if systemctl is-active --quiet nginx 2>/dev/null; then
+                systemctl reload nginx
+                log_success "Host nginx reloaded with client_max_body_size 50M"
+            elif service nginx status &>/dev/null; then
+                service nginx reload
+                log_success "Host nginx reloaded with client_max_body_size 50M"
+            else
+                log_warning "Host nginx config updated but could not reload automatically. Run: nginx -s reload"
+            fi
+        else
+            log_error "Host nginx config test failed after modification. Restoring backup..."
+            [ -f "${nginx_conf}.bak" ] && mv "${nginx_conf}.bak" "$nginx_conf"
+        fi
+    fi
+}
+
+# =============================================================================
 # Step 9: Post-install summary
 # =============================================================================
 print_summary() {
@@ -614,6 +685,7 @@ main() {
     prompt_config
     deploy_services
     wait_for_health
+    configure_host_nginx
     if [ -n "${DO_SSL_SETUP:-}" ] && [ -n "${DOMAIN_FOR_SSL:-}" ] && [ -n "${SSL_EMAIL:-}" ]; then
         log_step "Setting up SSL with Let's Encrypt..."
         INSTALL_DIR="$INSTALL_DIR" SKIP_CONFIRM=1 ./scripts/setup-ssl.sh "$DOMAIN_FOR_SSL" "$SSL_EMAIL" || true

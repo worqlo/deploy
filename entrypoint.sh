@@ -173,6 +173,65 @@ run_seeds() {
     fi
 }
 
+# Reconcile config-driven column types with the actual database schema.
+# SQLAlchemy's create_all won't ALTER existing columns and Alembic migrations
+# only run once, so a config change (e.g. KB_EMBEDDING_DIMENSIONS) can leave
+# the DB out of sync.  This function detects and fixes those mismatches
+# generically for all Vector columns defined in the models.
+reconcile_schema() {
+    log_info "Reconciling schema with current configuration..."
+
+    python -c "
+import asyncio, os
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
+from app.domain.models import Base
+from pgvector.sqlalchemy import Vector
+
+async def reconcile():
+    url = os.environ.get('DATABASE_URL', '')
+    if url.startswith('postgresql://'):
+        url = url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+    if url.startswith('postgres://'):
+        url = url.replace('postgres://', 'postgresql+asyncpg://', 1)
+
+    expected = {}
+    for table_name, table in Base.metadata.tables.items():
+        for col in table.columns:
+            if isinstance(col.type, Vector) and col.type.dim is not None:
+                expected[(table_name, col.name)] = col.type.dim
+
+    if not expected:
+        print('No Vector columns in models, nothing to reconcile')
+        return
+
+    engine = create_async_engine(url)
+    async with engine.begin() as conn:
+        for (tbl, col), want_dim in expected.items():
+            row = (await conn.execute(text(
+                'SELECT atttypmod FROM pg_attribute '
+                'WHERE attrelid = cast(:tbl AS regclass) AND attname = :col'
+            ), {'tbl': tbl, 'col': col})).fetchone()
+
+            if row is None:
+                continue
+
+            have_dim = row[0]
+            if have_dim == want_dim:
+                print(f'  {tbl}.{col}: vector({have_dim}) OK')
+                continue
+
+            print(f'  {tbl}.{col}: vector({have_dim}) -> vector({want_dim})')
+            await conn.execute(text(f'ALTER TABLE \"{tbl}\" DROP COLUMN IF EXISTS \"{col}\"'))
+            await conn.execute(text(f'ALTER TABLE \"{tbl}\" ADD COLUMN \"{col}\" vector({want_dim})'))
+
+    await engine.dispose()
+    print('Schema reconciliation complete')
+
+asyncio.run(reconcile())
+" && log_success "Schema reconciled!" || log_warn "Schema reconciliation had issues, continuing..."
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -201,7 +260,10 @@ else
     
     # Run migrations (incremental changes)
     run_migrations
-    
+
+    # Reconcile config-driven column types (e.g. Vector dimensions) with actual DB
+    reconcile_schema
+
     # Run seeds
     run_seeds
 fi
