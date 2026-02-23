@@ -164,7 +164,6 @@ services:
       - SGLANG_TEMPERATURE=${SGLANG_TEMPERATURE:-}
       - SGLANG_TOP_P=${SGLANG_TOP_P:-}
       - SGLANG_MAX_OUTPUT_TOKENS=${SGLANG_MAX_OUTPUT_TOKENS:-}
-      - SGLANG_WARMUP_ENABLED=${SGLANG_WARMUP_ENABLED:-true}
       # Harmony/tiktoken vocab cache (SGLang provider; writable in image)
       - TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_RS_CACHE_DIR:-/app/.cache/tiktoken_rs}
       # Embedding (Knowledge Base)
