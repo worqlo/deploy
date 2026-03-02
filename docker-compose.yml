@@ -344,7 +344,7 @@ services:
       dockerfile: deploy/Dockerfile
     container_name: worqlo-celery-beat
     restart: unless-stopped
-    command: celery -A app.workflows.celery.app beat -S sqlalchemy_celery_beat.schedulers:DatabaseScheduler --loglevel=info --scheduler-sync-every=30
+    command: celery -A app.workflows.celery.app beat -S sqlalchemy_celery_beat.schedulers:DatabaseScheduler --loglevel=info
     environment:
       # Skip migrations/seeds (handled by API container)
       - SKIP_STARTUP_TASKS=true
