@@ -26,7 +26,15 @@ import uuid
 from datetime import datetime, timezone
 
 # Add parent directory to path so we can import app modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, _root)
+
+# Load .env from project root
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_root, ".env"))
+except ImportError:
+    pass
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
