@@ -178,7 +178,7 @@ perform_update() {
 
     # Run database migrations
     log_info "Running database migrations..."
-    docker compose $COMPOSE_ARGS run --rm api alembic upgrade head 2>/dev/null || {
+    docker compose $COMPOSE_ARGS run --rm api alembic upgrade heads 2>/dev/null || {
         log_warning "Migration command not available or no migrations to run"
     }
 

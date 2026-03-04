@@ -140,12 +140,39 @@ asyncio.run(create())
 " && log_success "Core tables created!" || log_warn "Table creation had issues, continuing..."
 }
 
-# Run Alembic migrations
+# Check if alembic_version table exists (i.e. migrations have run before)
+is_fresh_database() {
+    python -c "
+import os, sys
+from sqlalchemy import create_engine, inspect
+
+url = os.environ.get('DATABASE_URL', '')
+engine = create_engine(url)
+has_table = inspect(engine).has_table('alembic_version')
+engine.dispose()
+sys.exit(0 if not has_table else 1)
+"
+}
+
+# Fresh DB: stamp Alembic to current heads without running migration code
+stamp_migrations() {
+    log_info "Fresh database detected — stamping Alembic to current revision..."
+
+    if [ -f "alembic.ini" ]; then
+        if alembic stamp heads; then
+            log_success "Alembic stamped to current heads"
+        else
+            log_warn "Alembic stamp had issues, continuing..."
+        fi
+    fi
+}
+
+# Existing DB: run incremental Alembic migrations
 run_migrations() {
     log_info "Running database migrations..."
-    
+
     if [ -f "alembic.ini" ]; then
-        if alembic upgrade head; then
+        if alembic upgrade heads; then
             log_success "Migrations completed successfully!"
         else
             log_error "Migrations failed"
@@ -246,25 +273,21 @@ echo ""
 if [[ "$SKIP_STARTUP_TASKS" == "true" ]]; then
     log_info "SKIP_STARTUP_TASKS=true, skipping migrations and seeds"
 else
-    # Parse database URL
     parse_database_url
-    
-    # Wait for PostgreSQL
     wait_for_postgres
-    
-    # Wait for S3/MinIO (if using S3 storage backend)
     wait_for_minio
-    
-    # Create core tables first (required before Alembic migrations)
-    create_tables
-    
-    # Run migrations (incremental changes)
-    run_migrations
 
-    # Reconcile config-driven column types (e.g. Vector dimensions) with actual DB
-    reconcile_schema
+    if is_fresh_database; then
+        # Clean install: create tables from models, stamp Alembic, seed
+        create_tables
+        stamp_migrations
+        reconcile_schema
+    else
+        # Existing DB: run incremental migrations, reconcile, then seed
+        run_migrations
+        reconcile_schema
+    fi
 
-    # Run seeds
     run_seeds
 fi
 

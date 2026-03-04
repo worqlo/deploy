@@ -161,7 +161,7 @@ async def main():
         # Check if tables exist (migrations ran)
         if not await check_table_exists(session, "roles"):
             print("\n❌ Error: Tables don't exist. Run Alembic migrations first:")
-            print("   alembic upgrade head")
+            print("   alembic upgrade heads")
             sys.exit(1)
 
         print("\n📊 Seeding reference data...\n")
