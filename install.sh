@@ -489,6 +489,40 @@ prompt_config() {
         fi
     fi
     ensure_env "ENABLE_OBSERVABILITY" "$ENABLE_OBSERVABILITY"
+
+    # Email / SMTP (optional)
+    if [ -t 0 ]; then
+        echo ""
+        read -p "Configure email (SMTP) for password reset & notifications? [y/N]: " CONFIGURE_EMAIL </dev/tty
+        if [[ "${CONFIGURE_EMAIL:-N}" =~ ^[Yy] ]]; then
+            read -p "  SMTP host (e.g. smtp.gmail.com, smtp.zoho.eu): " EMAIL_SMTP_HOST </dev/tty
+            read -p "  SMTP port [587]: " EMAIL_SMTP_PORT_INPUT </dev/tty
+            read -p "  SMTP username (email address): " EMAIL_SMTP_USER </dev/tty
+            read -s -p "  SMTP password: " EMAIL_SMTP_PASSWORD </dev/tty
+            echo ""
+            read -p "  From address [${EMAIL_SMTP_USER}]: " EMAIL_FROM_ADDRESS_INPUT </dev/tty
+            read -p "  From name [Worqlo]: " EMAIL_FROM_NAME_INPUT </dev/tty
+
+            ensure_env "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
+            ensure_env "EMAIL_SMTP_PORT" "${EMAIL_SMTP_PORT_INPUT:-587}"
+            ensure_env "EMAIL_SMTP_USER" "$EMAIL_SMTP_USER"
+            ensure_env "EMAIL_SMTP_PASSWORD" "$EMAIL_SMTP_PASSWORD"
+            ensure_env "EMAIL_FROM_ADDRESS" "${EMAIL_FROM_ADDRESS_INPUT:-$EMAIL_SMTP_USER}"
+            ensure_env "EMAIL_FROM_NAME" "${EMAIL_FROM_NAME_INPUT:-Worqlo}"
+            ensure_env "EMAIL_USE_TLS" "true"
+            log_success "Email configured"
+        fi
+    else
+        if [ -n "${EMAIL_SMTP_HOST:-}" ]; then
+            ensure_env "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
+            ensure_env "EMAIL_SMTP_PORT" "${EMAIL_SMTP_PORT:-587}"
+            ensure_env "EMAIL_SMTP_USER" "${EMAIL_SMTP_USER:-}"
+            ensure_env "EMAIL_SMTP_PASSWORD" "${EMAIL_SMTP_PASSWORD:-}"
+            ensure_env "EMAIL_FROM_ADDRESS" "${EMAIL_FROM_ADDRESS:-${EMAIL_SMTP_USER:-}}"
+            ensure_env "EMAIL_FROM_NAME" "${EMAIL_FROM_NAME:-Worqlo}"
+            ensure_env "EMAIL_USE_TLS" "${EMAIL_USE_TLS:-true}"
+        fi
+    fi
 }
 
 # =============================================================================

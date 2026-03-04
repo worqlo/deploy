@@ -164,6 +164,8 @@ stamp_migrations() {
         else
             log_warn "Alembic stamp had issues, continuing..."
         fi
+    else
+        log_warn "alembic.ini not found, skipping stamp"
     fi
 }
 
@@ -237,7 +239,8 @@ async def reconcile():
         for (tbl, col), want_dim in expected.items():
             row = (await conn.execute(text(
                 'SELECT atttypmod FROM pg_attribute '
-                'WHERE attrelid = cast(:tbl AS regclass) AND attname = :col'
+                'WHERE attrelid = cast(:tbl AS regclass) AND attname = :col '
+                'AND attnum > 0 AND NOT attisdropped'
             ), {'tbl': tbl, 'col': col})).fetchone()
 
             if row is None:
