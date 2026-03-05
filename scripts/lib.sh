@@ -195,7 +195,7 @@ _apply_base_url() {
     ensure_env "SALESFORCE_REDIRECT_URI" "${base_with_port}/integrations/salesforce/callback"
     ensure_env "HUBSPOT_REDIRECT_URI" "${base_with_port}/integrations/hubspot/callback"
     ensure_env "GRAFANA_ROOT_URL" "${base_with_port}/grafana/"
-    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${host}"
+    ensure_env "GRAFANA_CSRF_TRUSTED_ORIGINS" "${base_with_port}"
     if [[ "$scheme" = "https" ]]; then
         ensure_env "GRAFANA_COOKIE_SECURE" "true"
     else
