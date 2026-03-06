@@ -78,8 +78,8 @@ services:
       dockerfile: Dockerfile
       args:
         # Build-time env for client-side (browser) API calls via nginx
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost/api}
-        - NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL:-ws://localhost/ws}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api}
+        - NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL:-/ws}
     container_name: worqlo-chat-ui
     restart: unless-stopped
     # Remove external port - only accessible via nginx
@@ -95,7 +95,7 @@ services:
       - JWT_AUDIENCE=${JWT_AUDIENCE:-worqlo-backend-api}
       # Client-side URLs (also in build.args for bundle; here for runtime if app reads them)
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost/api}
-      - NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL:-ws://localhost/ws}
+      - NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL:-/ws}
       # Server-side API URL - for Docker internal networking (Next.js API routes → FastAPI)
       - BACKEND_API_URL=${BACKEND_API_URL:-http://api:8000/api}
     networks:

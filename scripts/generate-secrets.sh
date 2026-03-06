@@ -129,6 +129,8 @@ KB_EMBEDDING_DIMENSIONS=1536
 # URLs (set by install.sh based on your choice: localhost / IP / domain)
 # -----------------------------------------------------------------------------
 # Defaults for localhost; install.sh overwrites these when you select domain or IP
+# Keep NEXT_PUBLIC_API_URL absolute because backend services also use it to build callback/file links.
+# Browser clients still use same-origin /api at runtime in chat-ui.
 NEXT_PUBLIC_API_URL=http://localhost/api
 NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost/ws
 NEXTAUTH_URL=http://localhost
