@@ -194,13 +194,6 @@ CORS_ALLOW_ORIGINS=http://localhost,http://localhost:80,http://localhost:3000
 LOG_LEVEL=INFO
 
 # -----------------------------------------------------------------------------
-# LangSmith Observability (optional)
-# -----------------------------------------------------------------------------
-LANGSMITH_TRACING=false
-LANGSMITH_API_KEY=
-LANGSMITH_PROJECT=worqlo-self-hosted
-
-# -----------------------------------------------------------------------------
 # Storage
 # -----------------------------------------------------------------------------
 STORAGE_BACKEND=s3
@@ -216,6 +209,28 @@ GRAFANA_ADMIN_PASSWORD=$(generate_password 16)
 GRAFANA_ROOT_URL=http://localhost:3001
 # Set to true only when HTTPS is configured (install.sh / setup-ssl.sh handle this)
 GRAFANA_COOKIE_SECURE=false
+
+# Langfuse (self-hosted)
+LANGFUSE_ENABLED=false
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_SECRET_KEY=
+LANGFUSE_HOST=http://langfuse-web:3000
+LANGFUSE_PORT=3002
+LANGFUSE_NEXTAUTH_URL=http://localhost:3002
+LANGFUSE_NEXTAUTH_SECRET=$(generate_password 32)
+LANGFUSE_SALT=$(generate_password 32)
+LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32)
+LANGFUSE_TELEMETRY_ENABLED=false
+LANGFUSE_POSTGRES_VERSION=17
+LANGFUSE_POSTGRES_USER=postgres
+LANGFUSE_POSTGRES_PASSWORD=$(generate_password 24)
+LANGFUSE_POSTGRES_DB=postgres
+LANGFUSE_CLICKHOUSE_USER=clickhouse
+LANGFUSE_CLICKHOUSE_PASSWORD=$(generate_password 24)
+LANGFUSE_REDIS_AUTH=$(generate_password 24)
+LANGFUSE_MINIO_ROOT_USER=minio
+LANGFUSE_MINIO_ROOT_PASSWORD=$(generate_password 24)
+LANGFUSE_S3_BUCKET=langfuse
 
 EOF
 

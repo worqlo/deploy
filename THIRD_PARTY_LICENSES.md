@@ -113,7 +113,6 @@
 |                               |             | LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  |
 |                               |             | OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  |
 |                               |             | SOFTWARE.                                                                      |
-| langsmith                     | 0.5.0       | MIT                                                                            |
 | lark                          | 1.3.1       | MIT License                                                                    |
 | librt                         | 0.8.0       | MIT License                                                                    |
 | license-expression            | 30.4.4      | Apache-2.0                                                                     |

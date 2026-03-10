@@ -205,16 +205,17 @@ services:
       - FRONTEND_LOGIN_URL=${FRONTEND_LOGIN_URL:-http://localhost}
       # Internal Chat UI URL (for root proxy when tenants exist)
       - CHAT_UI_INTERNAL_URL=${CHAT_UI_INTERNAL_URL:-http://chat-ui:3000}
-      # LangSmith (optional)
-      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
-      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
-      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-worqlo-self-hosted}
+      # Langfuse (self-hosted, optional)
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
     volumes:
       - uploads-data:/app/uploads
     networks:
       - backend-network
       - db-network
-      - external-network  # Required for OpenAI, SMTP, LangSmith, webhooks
+      - external-network  # Required for OpenAI, SMTP, webhooks
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
