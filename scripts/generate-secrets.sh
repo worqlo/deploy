@@ -58,6 +58,9 @@ JWT_WS_SECRET=$(generate_secret 64)
 # NextAuth secret for frontend sessions (48+ chars recommended)
 NEXTAUTH_SECRET=$(generate_secret 64)
 
+# Fernet key for encrypting connector configurations (credentials, tokens)
+CONFIGURATIONS_ENCRYPTION_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+
 # -----------------------------------------------------------------------------
 # Database [REQUIRED] - CRYPTOGRAPHICALLY GENERATED
 # -----------------------------------------------------------------------------
