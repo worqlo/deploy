@@ -210,27 +210,12 @@ GRAFANA_ROOT_URL=http://localhost:3001
 # Set to true only when HTTPS is configured (install.sh / setup-ssl.sh handle this)
 GRAFANA_COOKIE_SECURE=false
 
-# Langfuse (self-hosted)
+# Langfuse (optional - external/cloud only; disabled by default)
+# Set LANGFUSE_ENABLED=true and add keys to use an external Langfuse instance
 LANGFUSE_ENABLED=false
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
-LANGFUSE_HOST=http://langfuse-web:3000
-LANGFUSE_PORT=3002
-LANGFUSE_NEXTAUTH_URL=http://localhost:3002
-LANGFUSE_NEXTAUTH_SECRET=$(generate_password 32)
-LANGFUSE_SALT=$(generate_password 32)
-LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32)
-LANGFUSE_TELEMETRY_ENABLED=false
-LANGFUSE_POSTGRES_VERSION=17
-LANGFUSE_POSTGRES_USER=postgres
-LANGFUSE_POSTGRES_PASSWORD=$(generate_password 24)
-LANGFUSE_POSTGRES_DB=postgres
-LANGFUSE_CLICKHOUSE_USER=clickhouse
-LANGFUSE_CLICKHOUSE_PASSWORD=$(generate_password 24)
-LANGFUSE_REDIS_AUTH=$(generate_password 24)
-LANGFUSE_MINIO_ROOT_USER=minio
-LANGFUSE_MINIO_ROOT_PASSWORD=$(generate_password 24)
-LANGFUSE_S3_BUCKET=langfuse
+LANGFUSE_HOST=
 
 EOF
 
