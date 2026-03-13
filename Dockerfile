@@ -60,12 +60,13 @@ LABEL org.opencontainers.image.authors="Worqlo Team"
 LABEL org.opencontainers.image.url="https://worqlo.com"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install runtime dependencies only (fonts-dejavu-core for PDF Unicode rendering)
+# Install runtime dependencies (fonts-dejavu-core for PDF; poppler-utils for pdf2image OCR)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     postgresql-client \
     curl \
     fonts-dejavu-core \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
