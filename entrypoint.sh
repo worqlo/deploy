@@ -72,13 +72,9 @@ wait_for_postgres() {
     exit 1
 }
 
-# Wait for S3/MinIO to be ready (only when STORAGE_BACKEND=s3)
+# Wait for MinIO to be ready
 wait_for_minio() {
-    if [[ "$STORAGE_BACKEND" != "s3" ]]; then
-        return 0
-    fi
-
-    log_info "Waiting for S3/MinIO storage..."
+    log_info "Waiting for MinIO storage..."
 
     python -c "
 import boto3, os, sys, time
@@ -90,7 +86,7 @@ region = os.environ.get('S3_REGION', 'us-east-1')
 bucket = os.environ.get('S3_BUCKET_NAME', '')
 
 if not bucket:
-    print('S3_BUCKET_NAME not set, skipping MinIO check')
+    print('S3_BUCKET_NAME not set; skipping MinIO check (storage will fail at startup)')
     sys.exit(0)
 
 for i in range(30):
