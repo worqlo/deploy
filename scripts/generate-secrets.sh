@@ -108,6 +108,9 @@ OLLAMA_MODEL=llama3.1:8b
 SGLANG_BASE_URL=http://your-sglang-host:30000
 SGLANG_MODEL=openai/gpt-oss-120b
 # SGLANG_REASONING_EFFORT=medium
+# Deterministic sampling (temperature=0, top_p=1.0)
+SGLANG_TEMPERATURE=0
+SGLANG_TOP_P=1.0
 
 # -----------------------------------------------------------------------------
 # Embedding Configuration (Knowledge Base)
