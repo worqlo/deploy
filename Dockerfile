@@ -35,8 +35,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install Python dependencies
 WORKDIR /build
 
-# Copy dependency files first for better caching
+# Copy dependency metadata and package source for setuptools (src layout)
 COPY pyproject.toml ./
+COPY src ./src
 
 # Install dependencies (production only)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -82,7 +83,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 
 # Copy application code (connectors are app.connectors under app/)
-COPY --chown=worqlo:worqlo app/ ./app/
+COPY --chown=worqlo:worqlo src/app/ ./app/
 # Third-party license attribution (generated in CI; placeholder for local builds)
 COPY --chown=worqlo:worqlo deploy/THIRD_PARTY_LICENSES.md ./
 COPY --chown=worqlo:worqlo migrations/ ./migrations/
