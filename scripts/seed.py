@@ -25,7 +25,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
-# Add parent directory to path so we can import app modules
+# Add project root so Alembic / tooling can resolve imports if needed
 _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _root)
 

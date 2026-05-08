@@ -116,7 +116,7 @@ create_tables() {
     
     python -c "
 import asyncio
-from app.domain.models import Base
+from worqlo.domain.models import Base
 from sqlalchemy.ext.asyncio import create_async_engine
 import os
 
@@ -210,7 +210,7 @@ reconcile_schema() {
 import asyncio, os
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
-from app.domain.models import Base
+from worqlo.domain.models import Base
 from pgvector.sqlalchemy import Vector
 
 async def reconcile():

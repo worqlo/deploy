@@ -82,8 +82,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Set working directory
 WORKDIR /app
 
-# Copy application code (connectors are app.connectors under app/)
-COPY --chown=worqlo:worqlo src/app/ ./app/
+# Copy application code (package worqlo when PYTHONPATH=/app)
+COPY --chown=worqlo:worqlo src/worqlo/ ./worqlo/
 # Third-party license attribution (generated in CI; placeholder for local builds)
 COPY --chown=worqlo:worqlo deploy/THIRD_PARTY_LICENSES.md ./
 COPY --chown=worqlo:worqlo migrations/ ./migrations/
@@ -123,5 +123,5 @@ EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Default command (can be overridden in docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "worqlo.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
 
